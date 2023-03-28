@@ -1,4 +1,4 @@
-from typing import Callable, Iterable, Literal, Optional
+from typing import Callable, Iterable, Literal, Optional, List
 
 import numpy as np
 import torch
@@ -255,7 +255,13 @@ class fairVAE(BaseModuleClass):
     def inference(self, x, x_cf,
                   cont_covs, cont_covs_cf,
                   cat_covs, cat_covs_cf,
-                  indices, indices_cf):
+                  indices, indices_cf,
+                  nullify_cat_covs_indices: Optional[List[int]] = None,
+                  nullify_cont_covs_indices: Optional[List[int]] = None):
+
+        nullify_cat_covs_indices = [] if nullify_cat_covs_indices is None else nullify_cat_covs_indices
+        nullify_cont_covs_indices = [] if nullify_cont_covs_indices is None else nullify_cont_covs_indices
+
         x_ = x
         x_cf_ = x_cf
         library = torch.log(x.sum(1)).unsqueeze(1)
@@ -289,10 +295,17 @@ class fairVAE(BaseModuleClass):
         qzs = [enc_out[0] for enc_out in encoders_outputs]
         zs = [enc_out[1] for enc_out in encoders_outputs]
 
-        encoders_outputs_cf = [zs_encoder(encoder_input_cf, *categorical_input_cf) for zs_encoder in
-                               self.zs_encoders_list]
+        encoders_outputs_cf = [zs_encoder(encoder_input_cf, *categorical_input_cf) for zs_encoder in self.zs_encoders_list]
         qzs_cf = [enc_out[0] for enc_out in encoders_outputs_cf]
         zs_cf = [enc_out[1] for enc_out in encoders_outputs_cf]
+
+        for i in range(self.zs_num):
+            if ((i - len(self.n_cat_list)) in nullify_cont_covs_indices) or (i in nullify_cat_covs_indices):
+                zs[i] = torch.zeros_like(zs[i])
+                zs_cf[i] = torch.zeros_like(zs_cf[i])
+
+        zs_concat = torch.cat(zs, dim=-1)
+        z_concat = torch.cat([z_shared, zs_concat], dim=-1)
 
         output_dict = {
             "z_shared": z_shared,
@@ -303,6 +316,8 @@ class fairVAE(BaseModuleClass):
             "qz_shared_cf": qz_shared_cf,
             "qzs": qzs,
             "qzs_cf": qzs_cf,
+            "zs_concat": zs_concat,
+            "z_concat": z_concat,
             "library": library,
             "library_cf": library_cf,
             "library_s": library_s,
@@ -366,9 +381,7 @@ class fairVAE(BaseModuleClass):
             if self.is_index_for_cont_cov(i):
                 # p(s|z)
                 ps_mean, ps_v = s_i_decoder(x=zs_i)
-                ps_given_z = Normal(loc=ps_mean, scale=ps_v.sqrt())
-                # s prior
-                ps = Normal(torch.zeros_like(ps_mean), torch.ones_like(ps_v))
+                ps = Normal(loc=ps_mean, scale=ps_v.sqrt())
             else:
                 # p(s|z)
                 size_factor = library_s[i]
@@ -378,13 +391,8 @@ class fairVAE(BaseModuleClass):
                     size_factor,
                 )
                 ps_r = torch.exp(self.ps_r[i])
-                ps_given_z = NegativeBinomial(mu=ps_rate, theta=ps_r, scale=ps_scale)
-                # s prior
-                ps = NegativeBinomial(mu=torch.zeros_like(ps_rate),
-                                      theta=torch.ones_like(ps_r),
-                                      scale=torch.zeros_like(ps_scale))
+                ps = NegativeBinomial(mu=ps_rate, theta=ps_r, scale=ps_scale)
 
-            output_dict["ps|z"].append(ps_given_z)
             output_dict["ps"].append(ps)
 
         return output_dict
@@ -417,8 +425,7 @@ class fairVAE(BaseModuleClass):
         for i in range(self.zs_num):
             s_i = cont_input[i - len(self.n_cat_list)] if self.is_index_for_cont_cov(i) \
                 else one_hot_cat([self.n_cov_list[i]], cat_input[i])
-            reconst_loss_s_i = (generative_outputs["ps"][i].log_prob(s_i) -
-                                generative_outputs["ps|z"][i].log_prob(s_i)).sum(-1)
+            reconst_loss_s_i = -generative_outputs["ps"][i].log_prob(s_i).sum(-1)
             reconst_loss_s += reconst_loss_s_i
 
         reconst_loss = reconst_loss_x + reconst_loss_x_cf + reconst_loss_s
