@@ -73,13 +73,20 @@ def get_paired_indices(cont_covs: torch.Tensor, cat_covs: torch.Tensor, dim_indi
     # TODO: needs 2 changes:
         # correct dims
         # some cont_covs (pc_i) might be grouped to 1 zs
-    n = cat_covs.size(dim=dim_indices)
-    graph = nx.Graph(n)
+    n = int(cat_covs.size(dim=dim_indices))
+    graph = nx.Graph()
+    graph.add_nodes_from(range(n))
+    # print(1)
     edge_weights = compute_covs_distances(cat_covs, cont_covs, n)
+    # print(2)
     for (i, j) in edge_weights.keys():
         graph.add_edge(i, j, weight=edge_weights[(i, j)])
+    # print(8)
     matching_edges = nx.min_weight_matching(graph)
-    return torch.tensor([e[0] for e in matching_edges]), torch.tensor([e[1] for e in matching_edges])
+    # print(9)
+    half1 = [e[0] for e in matching_edges]
+    half2 = [node for node in graph.nodes if node not in half1]
+    return torch.tensor(half1), torch.tensor(half2)
 
 
 def compute_covs_distances(cat_covs: torch.Tensor, cont_covs: torch.Tensor, n):
@@ -89,10 +96,13 @@ def compute_covs_distances(cat_covs: torch.Tensor, cont_covs: torch.Tensor, n):
     dist_per_cov = {c: {(i, j): covs_distance(covs[i][c], covs[j][c], c, cat_size)
                         for i in range(n) for j in range(n)}
                     for c in range(covs_count)}
+    # print('start')
     for c in range(cat_size, covs_count):
-        dist_per_cov[c] = {(i, j): dist_per_cov[c][(i, j)] / max(dist_per_cov[c].values())
+        # print(c)
+        max_val = max(dist_per_cov[c].values())
+        dist_per_cov[c] = {(i, j): dist_per_cov[c][(i, j)] / max_val
                            for i in range(n) for j in range(n)}
-
+    # print('end')
     dist = {(i, j): sum(dist_per_cov[c][(i, j)] for c in range(covs_count))
             for i in range(n) for j in range(i + 1, n)}
     return dist
