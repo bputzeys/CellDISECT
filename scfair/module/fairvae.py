@@ -145,10 +145,10 @@ class fairVAE(BaseModuleClass):
 
         # Decoders
         # covs are not used in decoders input
-
-        n_input_x_decoder = n_latent_shared + n_latent_attribute * self.zs_num
+        
+        self.n_latent = n_latent_shared + n_latent_attribute * self.zs_num
         self.x_decoder = DecoderSCVI(
-            n_input_x_decoder,
+            self.n_latent,
             n_input,
             n_layers=n_layers,
             n_hidden=n_hidden,
@@ -195,23 +195,28 @@ class fairVAE(BaseModuleClass):
 
     def _get_inference_input(self, tensors):
         cont_key = REGISTRY_KEYS.CONT_COVS_KEY
-        cont_covs = tensors[cont_key] if cont_key in tensors.keys() else None
+        cont_covs_tot = tensors[cont_key] if cont_key in tensors.keys() else None
 
         cat_key = REGISTRY_KEYS.CAT_COVS_KEY
-        cat_covs = tensors[cat_key] if cat_key in tensors.keys() else None
+        cat_covs_tot = tensors[cat_key] if cat_key in tensors.keys() else None
 
-        x = tensors[REGISTRY_KEYS.X_KEY]
+        x_tot = tensors[REGISTRY_KEYS.X_KEY]
 
-        indices, indices_cf = get_paired_indices(cont_covs, cat_covs, dim_indices)
+        # print(0)
+        indices, indices_cf = get_paired_indices(cont_covs_tot, cat_covs_tot, dim_indices)
+        # print(1)
+        
+#         k = cat_covs_tot.size(dim=dim_indices)
+#         indices, indices_cf = torch.tensor(range(k // 2)), torch.tensor(range(k // 2, 2 * (k // 2)))
 
-        x = torch.index_select(x, dim=dim_indices, index=indices)
-        x_cf = torch.index_select(x, dim=dim_indices, index=indices_cf)
+        x = torch.index_select(x_tot, dim=dim_indices, index=indices)
+        x_cf = torch.index_select(x_tot, dim=dim_indices, index=indices_cf)
 
-        cont_covs = torch.index_select(cont_covs, dim=dim_indices, index=indices) if cont_covs else None
-        cont_covs_cf = torch.index_select(cont_covs, dim=dim_indices, index=indices_cf) if cont_covs else None
+        cont_covs = torch.index_select(cont_covs_tot, dim=dim_indices, index=indices) if cont_covs_tot is not None else None
+        cont_covs_cf = torch.index_select(cont_covs_tot, dim=dim_indices, index=indices_cf) if cont_covs_tot is not None else None
 
-        cat_covs = torch.index_select(cat_covs, dim=dim_indices, index=indices) if cat_covs else None
-        cat_covs_cf = torch.index_select(cat_covs, dim=dim_indices, index=indices_cf) if cat_covs else None
+        cat_covs = torch.index_select(cat_covs_tot, dim=dim_indices, index=indices) if cat_covs_tot is not None else None
+        cat_covs_cf = torch.index_select(cat_covs_tot, dim=dim_indices, index=indices_cf) if cat_covs_tot is not None else None
 
         input_dict = {
             "x": x,
@@ -232,7 +237,7 @@ class fairVAE(BaseModuleClass):
         zs_cf = inference_outputs["zs_cf"]  # a list of all zs_cf
         library = inference_outputs["library"]
         library_cf = inference_outputs["library_cf"]
-        y = tensors[REGISTRY_KEYS.LABELS_KEY]
+        library_s = inference_outputs["library_s"]
 
         input_dict = {
             "z_shared": z_shared,
@@ -241,7 +246,7 @@ class fairVAE(BaseModuleClass):
             "zs_cf": zs_cf,  # a list of all zs_cf
             "library": library,
             "library_cf": library_cf,
-            "y": y,
+            "library_s": library_s,
             "cont_covs": inference_outputs["cont_covs"],
             "cont_covs_cf": inference_outputs["cont_covs_cf"],
             "cat_covs": inference_outputs["cat_covs"],
@@ -257,7 +262,8 @@ class fairVAE(BaseModuleClass):
                   cat_covs, cat_covs_cf,
                   indices, indices_cf,
                   nullify_cat_covs_indices: Optional[List[int]] = None,
-                  nullify_cont_covs_indices: Optional[List[int]] = None):
+                  nullify_cont_covs_indices: Optional[List[int]] = None, 
+                  nullify_shared: Optional[bool] = False):
 
         nullify_cat_covs_indices = [] if nullify_cat_covs_indices is None else nullify_cat_covs_indices
         nullify_cont_covs_indices = [] if nullify_cont_covs_indices is None else nullify_cont_covs_indices
@@ -304,8 +310,12 @@ class fairVAE(BaseModuleClass):
                 zs[i] = torch.zeros_like(zs[i])
                 zs_cf[i] = torch.zeros_like(zs_cf[i])
 
-        zs_concat = torch.cat(zs, dim=-1)
-        z_concat = torch.cat([z_shared, zs_concat], dim=-1)
+        zs_concat_f = torch.cat(zs, dim=-1)
+        z_concat_f = torch.cat([z_shared, zs_concat_f], dim=-1)
+        zs_concat_cf = torch.cat(zs_cf, dim=-1)
+        z_concat_cf = torch.cat([z_shared_cf, zs_concat_cf], dim=-1)
+
+        z_concat = torch.cat([z_concat_f, z_concat_cf], dim=0)
 
         output_dict = {
             "z_shared": z_shared,
@@ -316,7 +326,6 @@ class fairVAE(BaseModuleClass):
             "qz_shared_cf": qz_shared_cf,
             "qzs": qzs,
             "qzs_cf": qzs_cf,
-            "zs_concat": zs_concat,
             "z_concat": z_concat,
             "library": library,
             "library_cf": library_cf,
@@ -341,9 +350,9 @@ class fairVAE(BaseModuleClass):
         output_dict = {}
         for i in [0, 1]:
             # p(x|z), p(x|z')
-            # z_shared_i = [z_shared, z_shared_cf][i]
+            z_shared_i = [z_shared, z_shared_cf][i]
             # TODO: check if we should use above line or below
-            z_shared_i = z_shared
+            # z_shared_i = z_shared
             zs_i = [zs, zs_cf][i]
             x_decoder_input = torch.cat([z_shared_i, *zs_i], dim=-1)
             size_factor = [library, library_cf][i]
@@ -428,7 +437,7 @@ class fairVAE(BaseModuleClass):
             reconst_loss_s_i = -generative_outputs["ps"][i].log_prob(s_i).sum(-1)
             reconst_loss_s += reconst_loss_s_i
 
-        reconst_loss = reconst_loss_x + reconst_loss_x_cf + reconst_loss_s
+        reconst_loss = torch.mean(reconst_loss_x) + torch.mean(reconst_loss_x_cf) + torch.mean(reconst_loss_s)
 
         # KL divergence
 
@@ -443,9 +452,9 @@ class fairVAE(BaseModuleClass):
 
         # total loss
 
-        loss = torch.mean(reconst_loss + weighted_kl_local)
+        loss = reconst_loss + torch.mean(weighted_kl_local)
 
         return LossOutput(
-            loss=loss, reconstruction_loss=reconst_loss, kl_local=weighted_kl_local
+            loss=loss, reconstruction_loss=reconst_loss_x, kl_local=weighted_kl_local
         )
 
