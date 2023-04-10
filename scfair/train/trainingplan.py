@@ -143,9 +143,11 @@ class FairVITrainingPlan(TrainingPlan):
             z_concat_mixed = z_concat_mixed[perm_batch_idx, :]
             # give to adversarial_classifier and compute loss
             cls_pred = torch.nn.LogSoftmax(dim=1)(self.adversarial_classifier(z_concat_mixed))
-            true_idx = torch.Tensor([i for i in range(z_concat_mixed.size(0)) if perm_batch_idx[i] < z_concat.size(0)])
-            false_idx = torch.Tensor([i for i in range(z_concat_mixed.size(0)) if perm_batch_idx[i] >= z_concat.size(0)])
-            loss = -(torch.mean(cls_pred[true_idx, 0]) + torch.mean(cls_pred[false_idx, 1])) / 2
+            true_idx = torch.tensor([i for i in range(int(z_concat_mixed.size(0))) if perm_batch_idx[i] < z_concat.size(0)])
+            false_idx = torch.tensor([i for i in range(int(z_concat_mixed.size(0))) if perm_batch_idx[i] >= z_concat.size(0)])
+            true_pred = torch.index_select(cls_pred, dim=0, index=true_idx)
+            false_pred = torch.index_select(cls_pred, dim=0, index=false_idx)
+            loss = -(torch.mean(true_pred[:, 0]) + torch.mean(false_pred[:, 1])) / 2
         else:
             zs_concat = torch.cat(zs, dim=-1)
             z_concat = torch.cat([z_shared, zs_concat], dim=-1)
