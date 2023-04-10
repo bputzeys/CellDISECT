@@ -21,9 +21,9 @@ from scvi.utils import setup_anndata_dsp
 
 from scvi.dataloaders import DataSplitter
 from scvi.train import TrainingPlan, TrainRunner
-from scvi.utils._docstrings import devices_dsp
+# from scvi.utils._docstrings import devices_dsp
 
-from .base import RNASeqMixin, VAEMixin, BaseModelClass
+from scvi.model.base import RNASeqMixin, VAEMixin, BaseModelClass
 
 logger = logging.getLogger(__name__)
 
@@ -218,13 +218,13 @@ class FairVI(
 
         return torch.cat(latent).numpy()
 
-    @devices_dsp.dedent
+    # @devices_dsp.dedent
     def train(
         self,
         max_epochs: Optional[int] = None,
-        use_gpu: Optional[Union[str, int, bool]] = None,
-        accelerator: str = "auto",
-        devices: Union[int, List[int], str] = "auto",
+#         use_gpu: Optional[Union[str, int, bool]] = None,
+#         accelerator: str = "auto",
+#         devices: Union[int, List[int], str] = "auto",
         train_size: float = 0.9,
         validation_size: Optional[float] = None,
         batch_size: int = 128,
@@ -280,9 +280,9 @@ class FairVI(
             training_plan=training_plan,
             data_splitter=data_splitter,
             max_epochs=max_epochs,
-            use_gpu=use_gpu,
-            accelerator=accelerator,
-            devices=devices,
+#             use_gpu=use_gpu,
+#             accelerator=accelerator,
+#             devices=devices,
             **trainer_kwargs,
         )
         return runner()
