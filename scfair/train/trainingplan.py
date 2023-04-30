@@ -1,3 +1,4 @@
+import random
 from typing import Callable, Dict, Iterable, Literal, Optional, Union
 
 import optax
@@ -11,6 +12,8 @@ JaxOptimizerCreator = Callable[[], optax.GradientTransformation]
 TorchOptimizerCreator = Callable[[Iterable[torch.Tensor]], torch.optim.Optimizer]
 
 from scvi.train import TrainingPlan
+
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 
 class FairVITrainingPlan(TrainingPlan):
@@ -83,6 +86,7 @@ class FairVITrainingPlan(TrainingPlan):
         lr_min: float = 0,
         adversarial_classifier: Union[bool, Classifier] = True,
         scale_adversarial_loss: Union[float, Literal["auto"]] = "auto",
+        beta: int = 1,  # coef for TC term
         **loss_kwargs,
     ):
         super().__init__(
@@ -101,6 +105,8 @@ class FairVITrainingPlan(TrainingPlan):
             lr_min=lr_min,
             **loss_kwargs,
         )
+        self.beta = beta
+
         if adversarial_classifier is True:
             self.n_output_classifier = 2
             self.adversarial_classifier = Classifier(
@@ -109,7 +115,7 @@ class FairVITrainingPlan(TrainingPlan):
                 n_labels=self.n_output_classifier,
                 n_layers=2,
                 logits=True,
-            )
+            ).to(device)
         else:
             self.adversarial_classifier = adversarial_classifier
         self.scale_adversarial_loss = scale_adversarial_loss
@@ -117,9 +123,11 @@ class FairVITrainingPlan(TrainingPlan):
 
     def permute_z(self, z_list):
         z_perm_list = []
-        for j in range(len(z_list)):
-            idx = torch.randperm(z_list[j].size(0))
-            z_perm_list.append(z_list[j][idx, :].detach())
+        idx = torch.randperm(len(z_list))
+        z_perm_list = z_list[idx]
+        # for j in range(len(z_list)):
+        #     idx = torch.randperm(z_list[j].size(0)).to(device)
+        #     z_perm_list.append(z_list[j][idx, :].detach())
         return z_perm_list
 
     def loss_adversarial_classifier(self, z_shared, zs, compute_for_classifier=True):
@@ -128,30 +136,31 @@ class FairVITrainingPlan(TrainingPlan):
             # detach z
             zs = [zs_i.detach() for zs_i in zs]
             z_shared = z_shared.detach()
-            zs_concat = torch.cat(zs, dim=-1)
-            z_concat = torch.cat([z_shared, zs_concat], dim=-1)
+            zs_concat = torch.cat(zs, dim=-1).to(device)
+            z_concat = torch.cat([z_shared, zs_concat], dim=-1).to(device)
             # permute z
-            z_list = [z_shared] + zs
-            z_list_perm = self.permute_z(z_list)
+            z_list_perm = [z_shared] + zs
+            # z_list_perm = self.permute_z(z_list_perm)
+            random.shuffle(z_list_perm)
             z_shared_perm = z_list_perm[0]
             zs_perm = z_list_perm[1:]
-            zs_concat_perm = torch.cat(zs_perm, dim=-1)
-            z_concat_perm = torch.cat([z_shared_perm, zs_concat_perm], dim=-1)
+            zs_concat_perm = torch.cat(zs_perm, dim=-1).to(device)
+            z_concat_perm = torch.cat([z_shared_perm, zs_concat_perm], dim=-1).to(device)
             # mix permuted z and unpermuted z
-            z_concat_mixed = torch.cat([z_concat, z_concat_perm], dim=0)
-            perm_batch_idx = torch.randperm(z_concat_mixed.size(0))
+            z_concat_mixed = torch.cat([z_concat, z_concat_perm], dim=0).to(device)
+            perm_batch_idx = torch.randperm(z_concat_mixed.size(0)).to(device)
             z_concat_mixed = z_concat_mixed[perm_batch_idx, :]
             # give to adversarial_classifier and compute loss
-            cls_pred = torch.nn.LogSoftmax(dim=1)(self.adversarial_classifier(z_concat_mixed))
-            true_idx = torch.tensor([i for i in range(int(z_concat_mixed.size(0))) if perm_batch_idx[i] < z_concat.size(0)])
-            false_idx = torch.tensor([i for i in range(int(z_concat_mixed.size(0))) if perm_batch_idx[i] >= z_concat.size(0)])
-            true_pred = torch.index_select(cls_pred, dim=0, index=true_idx)
-            false_pred = torch.index_select(cls_pred, dim=0, index=false_idx)
+            cls_pred = torch.nn.LogSoftmax(dim=1)(self.adversarial_classifier(z_concat_mixed)).to(device)
+            true_idx = torch.tensor([i for i in range(int(z_concat_mixed.size(0))) if perm_batch_idx[i] < z_concat.size(0)]).to(device)
+            false_idx = torch.tensor([i for i in range(int(z_concat_mixed.size(0))) if perm_batch_idx[i] >= z_concat.size(0)]).to(device)
+            true_pred = torch.index_select(cls_pred, dim=0, index=true_idx).to(device)
+            false_pred = torch.index_select(cls_pred, dim=0, index=false_idx).to(device)
             loss = -(torch.mean(true_pred[:, 0]) + torch.mean(false_pred[:, 1])) / 2
         else:
-            zs_concat = torch.cat(zs, dim=-1)
-            z_concat = torch.cat([z_shared, zs_concat], dim=-1)
-            cls_pred = torch.nn.LogSoftmax(dim=1)(self.adversarial_classifier(z_concat))
+            zs_concat = torch.cat(zs, dim=-1).to(device)
+            z_concat = torch.cat([z_shared, zs_concat], dim=-1).to(device)
+            cls_pred = torch.nn.LogSoftmax(dim=1)(self.adversarial_classifier(z_concat)).to(device)
             loss = torch.mean(cls_pred[:, 0]) - torch.mean(cls_pred[:, 1])
 
         return loss
@@ -181,7 +190,7 @@ class FairVITrainingPlan(TrainingPlan):
         loss = scvi_loss.loss
         # fool classifier if doing adversarial training
         if kappa > 0 and self.adversarial_classifier is not False:
-            fool_loss = self.loss_adversarial_classifier(z_shared, zs, False)
+            fool_loss = self.loss_adversarial_classifier(z_shared, zs, False) * self.beta
             loss += fool_loss * kappa
 
         self.log("train_loss", loss, on_epoch=True)
