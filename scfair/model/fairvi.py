@@ -93,9 +93,14 @@ class FairVI(
         dropout_rate: float = 0.1,
         gene_likelihood: Literal["zinb", "nb", "poisson"] = "zinb",
         latent_distribution: Literal["normal", "ln"] = "normal",
+        alpha: int = 1,  # coef for P(Si|Zi)
+        beta: int = 1,   # coef for TC term
         **model_kwargs,
     ):
         super().__init__(adata)
+
+        self.alpha = alpha
+        self.beta = beta
 
         n_cats_per_cov = (
             self.adata_manager.get_state_registry(
@@ -116,6 +121,8 @@ class FairVI(
             dropout_rate=dropout_rate,
             gene_likelihood=gene_likelihood,
             latent_distribution=latent_distribution,
+            alpha=alpha,
+            beta=beta,
             **model_kwargs,
         )
         self._model_summary_string = (
@@ -179,13 +186,103 @@ class FairVI(
         cls.register_manager(adata_manager)
 
     @torch.no_grad()
+    def predict(
+        self,
+        adata: Optional[AnnData] = None,
+        adata_cf: Optional[AnnData] = None,
+        indices: Optional[Sequence[int]] = None,
+        batch_size: Optional[int] = None,   # must be as large as possible (default(None) = adata.n_obs)
+    ) -> AnnData:
+        """
+        must have adata.X = adata_cf.X (same gene expression)
+        return AnnData with AnnData.covs = adata_cf.covs and predicted X
+
+        Parameters
+        ----------
+        adata
+        adata_cf
+        indices
+        batch_size
+
+        Returns
+        -------
+
+        """
+        self._check_if_trained(warn=False)
+
+        adata = self._validate_anndata(adata)
+
+        batch_size = adata.n_obs
+
+        scdl = self._make_data_loader(
+            adata=adata, indices=indices, batch_size=batch_size, shuffle=False
+        )
+        adata_cf = self._validate_anndata(adata_cf)
+        scdl_cf = self._make_data_loader(
+            adata=adata_cf, indices=indices, batch_size=batch_size, shuffle=False
+        )
+
+        cont_key = REGISTRY_KEYS.CONT_COVS_KEY
+        cat_key = REGISTRY_KEYS.CAT_COVS_KEY
+
+        zs, z_shared = [], []
+        cont_covs, cat_covs = [], []
+        inference_outputs = dict()
+        for tensors in scdl:
+            inference_inputs = self.module._get_inference_input(tensors, for_train=False)
+            inference_outputs = self.module.inference(**inference_inputs, for_train=False)
+            zs += [inference_outputs["zs"]]
+            z_shared += [inference_outputs["z_shared"]]
+
+            cont_covs += [tensors[cont_key] if cont_key in tensors.keys() else None]
+            cat_covs += [tensors[cat_key] if cat_key in tensors.keys() else None]
+
+        zs = list(torch.cat(x) for x in zip(*zs))
+        z_shared = torch.cat(z_shared)
+        cont_covs = torch.cat(cont_covs) if None not in cont_covs else None
+        cat_covs = torch.cat(cat_covs) if None not in cat_covs else None
+
+        pred_adata = AnnData()
+
+        for tensors in scdl_cf:
+            # zs_cf
+            cont_covs_cf = tensors[cont_key] if cont_key in tensors.keys() else None
+            cat_covs_cf = tensors[cat_key] if cat_key in tensors.keys() else None
+            zs_cf = self.module.construct_zs_cf(zs, cont_covs, cat_covs, cont_covs_cf, cat_covs_cf)
+            # decode
+            generative_inputs = {
+                "z_shared": z_shared,
+                "z_shared_cf": z_shared,
+                "zs": zs_cf,
+                "zs_cf": zs_cf,
+                "library": inference_outputs["library"],
+                "library_cf": inference_outputs["library_cf"],
+                "library_s": inference_outputs["library_s"],
+                "cont_covs": cont_covs_cf,
+                "cont_covs_cf": cont_covs_cf,
+                "cat_covs": cat_covs_cf,
+                "cat_covs_cf": cat_covs_cf,
+                "indices": inference_outputs["indices"],
+                "indices_cf": inference_outputs["indices_cf"]
+            }
+            generative_outputs = self.module.generative(generative_inputs)
+            pred_x = generative_outputs["px"].mean
+            pred_adata = AnnData(X=pred_x)
+            pred_adata.layers["counts"] = pred_adata.X.copy()
+            pred_adata.obs = adata.obs
+            pred_adata.var_names = adata.var_names
+
+        return pred_adata
+
+    @torch.no_grad()
     def get_latent_representation(
         self,
         adata: Optional[AnnData] = None,
         indices: Optional[Sequence[int]] = None,
         batch_size: Optional[int] = None,
         nullify_cat_covs_indices: Optional[List[int]] = None,
-        nullify_cont_covs_indices: Optional[List[int]] = None
+        nullify_cont_covs_indices: Optional[List[int]] = None,
+        nullify_shared: Optional[bool] = False
     ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
         """
         Parameters
@@ -200,6 +297,8 @@ class FairVI(
             Categorical attributes to nullify in the latent space.
         nullify_cont_covs_indices
             Continuous attributes to nullify in the latent space.
+        nullify_shared
+            nullify Z_shared
         """
         self._check_if_trained(warn=False)
 
@@ -209,22 +308,25 @@ class FairVI(
         )
         latent = []
         for tensors in scdl:
-            inference_inputs = self.module._get_inference_input(tensors)
+            inference_inputs = self.module._get_inference_input(tensors, for_train=False)
             outputs = self.module.inference(**inference_inputs,
                                             nullify_cat_covs_indices=nullify_cat_covs_indices,
-                                            nullify_cont_covs_indices=nullify_cont_covs_indices)
+                                            nullify_cont_covs_indices=nullify_cont_covs_indices,
+                                            nullify_shared=nullify_shared,
+                                            for_train=False)
 
             latent += [outputs["z_concat"].cpu()]
 
         return torch.cat(latent).numpy()
 
+
     # @devices_dsp.dedent
     def train(
         self,
         max_epochs: Optional[int] = None,
-#         use_gpu: Optional[Union[str, int, bool]] = None,
-#         accelerator: str = "auto",
-#         devices: Union[int, List[int], str] = "auto",
+        use_gpu: Optional[Union[str, int, bool]] = None,
+        accelerator: str = "auto",
+        devices: Union[int, List[int], str] = "auto",
         train_size: float = 0.9,
         validation_size: Optional[float] = None,
         batch_size: int = 128,
@@ -269,7 +371,7 @@ class FairVI(
             validation_size=validation_size,
             batch_size=batch_size,
         )
-        training_plan = self._training_plan_cls(self.module, **plan_kwargs)
+        training_plan = self._training_plan_cls(self.module, beta=self.beta, **plan_kwargs)
 
         es = "early_stopping"
         trainer_kwargs[es] = (
@@ -280,9 +382,9 @@ class FairVI(
             training_plan=training_plan,
             data_splitter=data_splitter,
             max_epochs=max_epochs,
-#             use_gpu=use_gpu,
-#             accelerator=accelerator,
-#             devices=devices,
+            use_gpu=use_gpu,
+            # accelerator=accelerator,
+            # devices=devices,
             **trainer_kwargs,
         )
         return runner()
