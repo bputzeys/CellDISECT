@@ -1,4 +1,5 @@
 from typing import Callable, Iterable, Literal, Optional, List
+from collections import defaultdict
 
 import numpy as np
 import torch
@@ -218,7 +219,7 @@ class fairVAE(BaseModuleClass):
         if for_train:
             # indices, indices_cf = get_paired_indices(cont_covs_tot, cat_covs_tot, dim_indices)
             indices = torch.tensor(list(range(batch_size // 2))).to(device)
-            indices_cf = torch.tensor(list(range(batch_size // 2, batch_size))).to(device)
+            indices_cf = torch.tensor(list(range(batch_size // 2, 2 * (batch_size // 2)))).to(device)
 
         x = torch.index_select(x_tot, dim=dim_indices, index=indices)
         x_cf = torch.index_select(x_tot, dim=dim_indices, index=indices_cf)
@@ -370,46 +371,49 @@ class fairVAE(BaseModuleClass):
         # construct counterfactual zs with the same covs as (cont_covs_cf, cat_covs_cf)
         # approach: take mean of zs that have the same covs as (cont_covs_cf, cat_covs_cf)
         # if no such zs exists at a point we fill with 0
-        # not: must have dim(covs_cf) << dim(covs)
 
         zs_cf = []
 
         for cov_idx in range(len(zs)):
+
+            cov_to_sample_idx = defaultdict(list)
+
+            # compute z means for each cov value
+            for sample_idx in range(len(cat_covs)):
+
+                if self.is_index_for_cont_cov(cov_idx):
+                    cont_cov_idx = cov_idx - len(self.n_cat_list)
+                    cov_to_sample_idx[cont_covs[sample_idx][cont_cov_idx]] = \
+                        cov_to_sample_idx[cont_covs[sample_idx][cont_cov_idx]] + [sample_idx]
+                else:
+                    cov_to_sample_idx[cat_covs[sample_idx][cov_idx]] = \
+                        cov_to_sample_idx[cat_covs[sample_idx][cov_idx]] + [sample_idx]
+
+            cov_to_sample_mean = {cov_value: torch.mean(torch.tensor(
+                [list(zs[cov_idx][j]) for j in cov_to_sample_idx[cov_value]]).to(device), dim=0)
+                                  for cov_value in cov_to_sample_idx.keys()}
+
             zs_cf_cov = []
-            # for sample_idx in range(len(zs[0])):
+
+            # construct z_cf using means
+            # for sample_idx in range(min(len(cat_covs_cf), len(cat_covs))):
             for sample_idx in range(len(cat_covs_cf)):
 
                 if self.is_index_for_cont_cov(cov_idx):
                     cont_cov_idx = cov_idx - len(self.n_cat_list)
-                    zs_cf_i_all = [zs[cov_idx][j] for j in range(len(zs[cov_idx]))
-                                   if cont_covs[j][cont_cov_idx] == cont_covs_cf[sample_idx][cont_cov_idx]]
+                    cov_val = cont_covs_cf[sample_idx][cont_cov_idx]
+                    nearest_cov_val = min(cov_to_sample_mean.keys(), key=lambda k: abs(cov_to_sample_mean[k] - cov_val))
+                    zs_cf_i = cov_to_sample_mean[nearest_cov_val]
                 else:
-                    zs_cf_i_all = [zs[cov_idx][j] for j in range(len(zs[cov_idx]))
-                                   if cat_covs[j][cov_idx] == cat_covs_cf[sample_idx][cov_idx]]
+                    cov_val = cat_covs_cf[sample_idx][cov_idx]
+                    if cov_val in cov_to_sample_mean:
+                        zs_cf_i = cov_to_sample_mean[cov_val]
+                    else:
+                        zs_cf_i = torch.zeros(len(zs[cov_idx][0]))
 
-                zs_cf_i_tensor = torch.tensor([list(z) for z in zs_cf_i_all]) if len(zs_cf_i_all) > 0 \
-                    else torch.zeros(len(zs[cov_idx][0]))
-
-                # zs_cf_i_tensor = torch.cat(zs_cf_i_all, dim=0) if len(zs_cf_i_all) > 0 \
-                #     else torch.zeros(1, len(zs[cov_idx][0]))
-                    # else torch.zeros_like(zs[cov_idx][0])
-                zs_cf_i_tensor = zs_cf_i_tensor.to(device)
-
-                # print(zs_cf_i_tensor)
-
-                zs_cf_i = torch.mean(zs_cf_i_tensor, dim=0) if len(zs_cf_i_all) > 0 \
-                    else zs_cf_i_tensor
-                zs_cf_i = zs_cf_i.to(device)
-
-                # print(zs_cf_i)
-                # print(zs_cf_i.size())
-
-                zs_cf_cov.append(zs_cf_i)
-
-            # print(zs_cf_cov)
+                zs_cf_cov.append(zs_cf_i.to(device))
 
             zs_cf.append(torch.tensor([list(z) for z in zs_cf_cov]).to(device))
-            # zs_cf.append(torch.cat(zs_cf_cov, dim=0))
 
         return zs_cf
 
