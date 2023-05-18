@@ -1,5 +1,7 @@
 import random
-from typing import Callable, Dict, Iterable, Literal, Optional, Union
+from collections import OrderedDict
+from typing import Callable, Dict, Iterable, Literal, Optional, Union, List
+from enum import Enum
 
 import optax
 import torch
@@ -7,13 +9,22 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from scvi.autotune._types import Tunable, TunableMixin
 from scvi.module import Classifier
-from scvi.module.base import BaseModuleClass
+from scvi.module.base import BaseModuleClass, LossOutput
 JaxOptimizerCreator = Callable[[], optax.GradientTransformation]
 TorchOptimizerCreator = Callable[[Iterable[torch.Tensor]], torch.optim.Optimizer]
 
 from scvi.train import TrainingPlan
 
+from scvi_dev.nn._utils import *
+
+from scvi.train._metrics import ElboMetric
+
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+# for hyperparameter tuning
+from ray import tune
+from scvi._decorators import classproperty
+from scvi.autotune._types import Tunable, TunableMixin
 
 
 class FairVITrainingPlan(TrainingPlan):
@@ -72,21 +83,19 @@ class FairVITrainingPlan(TrainingPlan):
         *,
         optimizer: Tunable[Literal["Adam", "AdamW", "Custom"]] = "Adam",
         optimizer_creator: Optional[TorchOptimizerCreator] = None,
-        lr: Tunable[float] = 1e-3,
-        weight_decay: Tunable[float] = 1e-6,
+        lr: Tunable[float] = 3 * 1e-4,
+        weight_decay: Tunable[float] = 1e-4,
         n_steps_kl_warmup: Tunable[int] = None,
         n_epochs_kl_warmup: Tunable[int] = 400,
-        reduce_lr_on_plateau: Tunable[bool] = False,
-        lr_factor: Tunable[float] = 0.6,
-        lr_patience: Tunable[int] = 30,
+        reduce_lr_on_plateau: Tunable[bool] = True,
+        lr_factor: Tunable[float] = 0.4,
+        lr_patience: Tunable[int] = 20,
         lr_threshold: Tunable[float] = 0.0,
-        lr_scheduler_metric: Literal[
-            "elbo_validation", "reconstruction_loss_validation", "kl_local_validation"
-        ] = "elbo_validation",
+        lr_scheduler_metric: Literal["loss_validation"] = "loss_validation",
         lr_min: float = 0,
         adversarial_classifier: Union[bool, Classifier] = True,
         scale_adversarial_loss: Union[float, Literal["auto"]] = "auto",
-        beta: int = 1,  # coef for TC term
+        beta: Tunable[float] = 1.0,  # coef for TC term
         **loss_kwargs,
     ):
         super().__init__(
@@ -119,16 +128,88 @@ class FairVITrainingPlan(TrainingPlan):
         else:
             self.adversarial_classifier = adversarial_classifier
         self.scale_adversarial_loss = scale_adversarial_loss
+
         self.automatic_optimization = False
 
-    def permute_z(self, z_list):
-        z_perm_list = []
-        idx = torch.randperm(len(z_list))
-        z_perm_list = z_list[idx]
-        # for j in range(len(z_list)):
-        #     idx = torch.randperm(z_list[j].size(0)).to(device)
-        #     z_perm_list.append(z_list[j][idx, :].detach())
-        return z_perm_list
+        # self.adversarial_attribute_decoder =
+
+        # self.epoch_keys = LOSS_KEYS_LIST
+        # self.epoch_history = {"mode": [], "epoch": []}
+        # for key in self.epoch_keys:
+        #     self.epoch_history[key] = []
+
+    @staticmethod
+    def _create_elbo_metric_components(mode: str, n_total: Optional[int] = None):
+        """Initialize metrics and the metric collection."""
+        metrics_list = [ElboMetric(met_name, mode, "obs") for met_name in LOSS_KEYS_LIST]
+        collection = OrderedDict([(metric.name, metric) for metric in metrics_list])
+        return metrics_list, collection
+
+    def initialize_train_metrics(self):
+        """Initialize train related metrics."""
+        self.elbo_metrics_list_train, self.train_metrics = \
+            self._create_elbo_metric_components(mode="train", n_total=self.n_obs_training)
+
+    def initialize_val_metrics(self):
+        """Initialize val related metrics."""
+        self.elbo_metrics_list_val, self.val_metrics = \
+            self._create_elbo_metric_components(mode="validation", n_total=self.n_obs_validation)
+
+    @torch.inference_mode()
+    def compute_and_log_metrics(
+            self,
+            loss_output: dict,
+            metrics: Dict[str, ElboMetric],
+            mode: str,
+    ):
+        """Computes and logs metrics.
+
+        Parameters
+        ----------
+        loss_output
+            LossOutput dict from scvi-tools module
+        metrics
+            Dictionary of metrics to update
+        mode
+            Postfix string to add to the metric name of
+            extra metrics
+        """
+
+        for met_name in LOSS_KEYS_LIST:
+            metrics[f"{met_name}_{mode}"] = loss_output[met_name]
+            if isinstance(loss_output[met_name], dict):
+                self.log_dict(
+                    loss_output[met_name],
+                    on_step=False,
+                    on_epoch=True,
+                    prog_bar=True
+                )
+            else:
+                self.log(
+                    f"{met_name}_{mode}",
+                    loss_output[met_name],
+                    on_step=False,
+                    on_epoch=True,
+                    prog_bar=True
+                )
+
+    # @property
+    # def epoch_keys(self):
+    #     """Epoch keys getter."""
+    #     return self._epoch_keys
+    #
+    # @epoch_keys.setter
+    # def epoch_keys(self, epoch_keys: List):
+    #     self._epoch_keys.extend(epoch_keys)
+
+    # def permute_z(self, z_list):
+    #     z_perm_list = []
+    #     idx = torch.randperm(len(z_list))
+    #     z_perm_list = z_list[idx]
+    #     # for j in range(len(z_list)):
+    #     #     idx = torch.randperm(z_list[j].size(0)).to(device)
+    #     #     z_perm_list.append(z_list[j][idx, :].detach())
+    #     return z_perm_list
 
     def loss_adversarial_classifier(self, z_shared, zs, compute_for_classifier=True):
         """Loss for adversarial classifier."""
@@ -182,19 +263,29 @@ class FairVITrainingPlan(TrainingPlan):
         else:
             opt1, opt2 = opts
 
-        inference_outputs, _, scvi_loss = self.forward(
+        inference_outputs, _, losses = self.forward(
             batch, loss_kwargs=self.loss_kwargs
         )
         z_shared = inference_outputs["z_shared"]
         zs = inference_outputs["zs"]
-        loss = scvi_loss.loss
+        loss = losses[LOSS_KEYS.LOSS]
         # fool classifier if doing adversarial training
         if kappa > 0 and self.adversarial_classifier is not False:
             fool_loss = self.loss_adversarial_classifier(z_shared, zs, False) * self.beta
             loss += fool_loss * kappa
 
-        self.log("train_loss", loss, on_epoch=True)
-        self.compute_and_log_metrics(scvi_loss, self.train_metrics, "train")
+            self.log("adversarial_loss_train", fool_loss, on_epoch=True, prog_bar=True)
+
+        # log metrics
+        # for key in self.epoch_keys:
+        #     if isinstance(losses[key], dict):
+        #         self.log_dict(losses[key], on_epoch=True, prog_bar=True)
+        #     else:
+        #         self.log(f"train_{key}", losses[key], on_epoch=True, prog_bar=True)
+        # self.log("train_loss", loss, on_epoch=True)
+
+        self.compute_and_log_metrics(losses, self.train_metrics, "train")
+
         opt1.zero_grad()
         self.manual_backward(loss)
         opt1.step()
@@ -203,10 +294,46 @@ class FairVITrainingPlan(TrainingPlan):
         # this condition will not be met unless self.adversarial_classifier is not False
         if opt2 is not None:
             loss = self.loss_adversarial_classifier(z_shared, zs, True)
+
+            # tune
+            # tune.report({"loss_adversarial": loss})
+
+            # self.log("train_adversarial_loss", on_epoch=True, prog_bar=True)
+
             loss *= kappa
             opt2.zero_grad()
             self.manual_backward(loss)
             opt2.step()
+
+        results = {}
+        for key in LOSS_KEYS_LIST:
+            results.update({key: losses[key]})
+        return results
+
+    def validation_step(self, batch, batch_idx):
+        """Validation step."""
+        inf_outputs, gen_outputs, losses = self.forward(batch)
+
+        self.compute_and_log_metrics(losses, self.val_metrics, "validation")
+
+        results = {}
+        for key in losses:
+            results.update({key: losses[key]})
+
+        # add new metrics:
+        # r2_mean, r2_var = self.module.r2_metric(batch, gen_outputs)
+        # results.update({"generative_mean_accuracy": r2_mean})
+        # results.update({"generative_var_accuracy": r2_var})
+        # results.update({"biolord_metric": biolord_metric(r2_mean, r2_var)})
+
+        # log metrics
+        # for key in self.epoch_keys:
+        #     if isinstance(results[key], dict):
+        #         self.log_dict(results[key], on_epoch=True, prog_bar=True)
+        #     else:
+        #         self.log(f"val_{key}", results[key], on_epoch=True, prog_bar=True)
+
+        return results
 
     def on_train_epoch_end(self):
         """Update the learning rate via scheduler steps."""
@@ -217,7 +344,7 @@ class FairVITrainingPlan(TrainingPlan):
             sch.step(self.trainer.callback_metrics[self.lr_scheduler_metric])
 
     def on_validation_epoch_end(self) -> None:
-        """Update the learning rate via scheduler steps."""
+        # Update the learning rate via scheduler steps.
         if (
             not self.reduce_lr_on_plateau
             or "validation" not in self.lr_scheduler_metric
@@ -269,4 +396,12 @@ class FairVITrainingPlan(TrainingPlan):
                 return opts
 
         return config1
+
+    # @classproperty
+    # def _tunables(cls):
+    #     return [cls.__init__, cls.training_step]
+    #
+    # @classproperty
+    # def _metrics(cls):
+    #     return ["loss_adversarial"]
 
