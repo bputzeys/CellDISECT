@@ -1,11 +1,12 @@
-from typing import Callable, Iterable, Literal, Optional, List
+from typing import Callable, Iterable, Literal, Optional, List, Union, Tuple
 from collections import defaultdict
+from enum import Enum
 
 import numpy as np
 import torch
 import torch.nn.functional as F
 from torch import logsumexp
-from torch.distributions import Normal, Bernoulli
+from torch.distributions import Normal, Bernoulli, Categorical
 from torch.distributions import kl_divergence as kl
 
 from scvi import REGISTRY_KEYS
@@ -20,12 +21,19 @@ torch.backends.cudnn.benchmark = True
 # from scvi_dev.nn._base_components_utils import *
 from scvi_dev.nn._utils import *
 
+from scvi.module._classifier import Classifier
+
 dim_indices = 0
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 # device = 'cuda'
 
 # all tensors are samples_count x cov_count
+
+# for hyperparameter tuning
+from ray import tune
+from scvi._decorators import classproperty
+from scvi.autotune._types import Tunable, TunableMixin
 
 
 class fairVAE(BaseModuleClass):
@@ -89,8 +97,8 @@ class fairVAE(BaseModuleClass):
             use_batch_norm: Tunable[Literal["encoder", "decoder", "none", "both"]] = "both",
             use_layer_norm: Tunable[Literal["encoder", "decoder", "none", "both"]] = "none",
             var_activation: Optional[Callable] = None,
-            alpha: int = 1,  # coef for P(Si|Zi)
-            beta: int = 1,  # coef for TC term
+            alpha: Tunable[Union[List[float], Tuple[float], float]] = 1.0,  # coef for P(Si|Zi)
+            beta: Tunable[float] = 1.0,  # coef for TC term
     ):
         super().__init__()
         self.dispersion = "gene"
@@ -134,25 +142,27 @@ class fairVAE(BaseModuleClass):
         self.zs_num = len(self.n_cat_list) + n_continuous_cov
         # TODO: should be changed (e.g. some cont_covs (pc_i) might be grouped to 1 zs)
 
-        self.zs_encoders_list = torch.nn.ModuleList(
-            [
-                Encoder(
-                    n_input_encoder,
-                    n_latent_attribute,
-                    n_cat_list=self.n_cat_list,
-                    n_layers=n_layers,
-                    n_hidden=n_hidden,
-                    dropout_rate=dropout_rate,
-                    distribution=latent_distribution,
-                    inject_covariates=deeply_inject_covariates,
-                    use_batch_norm=use_batch_norm_encoder,
-                    use_layer_norm=use_layer_norm_encoder,
-                    var_activation=var_activation,
-                    return_dist=True,
-                ).to(device)
-                for _ in range(self.zs_num)
-            ]
-        )
+        if isinstance(self.alpha, float):
+            self.alpha = [self.alpha for _ in range(self.zs_num)]
+
+        self.zs_encoders_list = [
+            Encoder(
+                n_input_encoder,
+                n_latent_attribute,
+                n_cat_list=[self.n_cat_list[i] for i in range(len(self.n_cat_list)) if i != k],
+                n_layers=n_layers,
+                n_hidden=n_hidden,
+                dropout_rate=dropout_rate,
+                distribution=latent_distribution,
+                inject_covariates=deeply_inject_covariates,
+                use_batch_norm=use_batch_norm_encoder,
+                use_layer_norm=use_layer_norm_encoder,
+                var_activation=var_activation,
+                return_dist=True,
+            ).to(device)
+            for k in range(self.zs_num)
+        ]
+
 
         # Decoders
         # covs are not used in decoders input
@@ -168,41 +178,22 @@ class fairVAE(BaseModuleClass):
             use_layer_norm=use_layer_norm_decoder,
             scale_activation="softmax",
         ).to(device)
-        self.n_cov_list = [1 if self.is_index_for_cont_cov(i) else self.n_cat_list[i] for i in range(self.zs_num)]
-        # TODO: should be changed (e.g. some cont_covs (pc_i) might be grouped to 1 zs)
 
-        self.s_decoders_list = torch.nn.ModuleList([])
+        # all covs are assumed cat
+
+        self.s_classifiers_list = []
         for i in range(self.zs_num):
-            if self.is_index_for_cont_cov(i):
-                self.s_decoders_list.append(
-                    Decoder(
-                        n_input=n_latent_attribute,
-                        n_output=self.n_cov_list[i],
-                        n_hidden=n_hidden,
-                        n_layers=n_layers,
-                        use_batch_norm=use_batch_norm_decoder,
-                        use_layer_norm=use_layer_norm_decoder,
-                        use_activation=True,
-                    ).to(device)
-                )
-            else:
-                self.s_decoders_list.append(
-                    DecoderSCVI(
-                        n_latent_attribute,
-                        self.n_cov_list[i],
-                        n_layers=n_layers,
-                        n_hidden=n_hidden,
-                        inject_covariates=deeply_inject_covariates,
-                        use_batch_norm=use_batch_norm_decoder,
-                        use_layer_norm=use_layer_norm_decoder,
-                        scale_activation="softmax",
-                    ).to(device)
-                )
+            self.s_classifiers_list.append(
+                Classifier(
+                    n_input=n_latent_attribute,
+                    n_labels=self.n_cat_list[i],
+                ).to(device)
+            )
 
-        self.ps_r = [torch.nn.Parameter(torch.randn(self.n_cov_list[i])).to(device) for i in range(self.zs_num)]
+        self.s_prior = [torch.nn.Parameter((1 / n_labels) * torch.ones(1, n_labels), requires_grad=False).to(device)
+                        for n_labels in self.n_cat_list]
 
-    def is_index_for_cont_cov(self, i):
-        return i >= len(self.n_cat_list)
+        self.ps_r = [torch.nn.Parameter(torch.randn(self.n_cat_list[i])).to(device) for i in range(self.zs_num)]
 
     def _get_inference_input(self, tensors, for_train=True):
         cont_key = REGISTRY_KEYS.CONT_COVS_KEY
@@ -303,25 +294,36 @@ class fairVAE(BaseModuleClass):
         else:
             encoder_input = x_
             encoder_input_cf = x_cf_
-        if cat_covs is not None:
-            categorical_input = torch.split(cat_covs, 1, dim=1)
-            categorical_input_cf = torch.split(cat_covs_cf, 1, dim=1)
-            library_s.extend(torch.log(c.sum(1)).unsqueeze(1) for c in categorical_input)
-        else:
-            categorical_input = ()
-            categorical_input_cf = ()
 
-        qz_shared, z_shared = self.z_shared_encoder(encoder_input, *categorical_input)
-        qz_shared_cf, z_shared_cf = self.z_shared_encoder(encoder_input_cf, *categorical_input_cf)
+        all_cat_inputs = []
+
+        if cat_covs is not None:
+            cat_in = torch.split(cat_covs, 1, dim=1)
+            cat_in_cf = torch.split(cat_covs_cf, 1, dim=1)
+            library_s.extend(torch.log(c.sum(1)).unsqueeze(1) for c in cat_in)
+        else:
+            cat_in = ()
+            cat_in_cf = ()
+
+        qz_shared, z_shared = self.z_shared_encoder(encoder_input, *cat_in)
+        qz_shared_cf, z_shared_cf = self.z_shared_encoder(encoder_input_cf, *cat_in_cf)
         z_shared = z_shared.to(device)
         z_shared_cf = z_shared_cf.to(device)
 
-        encoders_outputs = [zs_encoder(encoder_input, *categorical_input) for zs_encoder in self.zs_encoders_list]
+        # cat inputs for encoders
+        all_cat_in = []
+        all_cat_in_cf = []
+        for i in range(self.zs_num):
+            all_cat_in.append([cat_in[j] for j in range(len(cat_in)) if j != i])
+            all_cat_in_cf.append([cat_in_cf[j] for j in range(len(cat_in_cf)) if j != i])
+
+        encoders_outputs = [self.zs_encoders_list[i](encoder_input, *all_cat_in[i])
+                            for i in range(len(self.zs_encoders_list))]
         qzs = [enc_out[0] for enc_out in encoders_outputs]
         zs = [enc_out[1].to(device) for enc_out in encoders_outputs]
 
-        encoders_outputs_cf = [zs_encoder(encoder_input_cf, *categorical_input_cf) for zs_encoder in
-                               self.zs_encoders_list]
+        encoders_outputs_cf = [self.zs_encoders_list[i](encoder_input_cf, *all_cat_in_cf[i])
+                               for i in range(len(self.zs_encoders_list))]
         qzs_cf = [enc_out[0] for enc_out in encoders_outputs_cf]
         zs_cf = [enc_out[1].to(device) for enc_out in encoders_outputs_cf]
 
@@ -376,15 +378,13 @@ class fairVAE(BaseModuleClass):
 
         for cov_idx in range(len(zs)):
 
-            cov_to_sample_idx = defaultdict(list)
+            cov_to_sample_idx = dict()
 
             # compute z means for each cov value
             for sample_idx in range(len(cat_covs)):
 
-                if self.is_index_for_cont_cov(cov_idx):
-                    cont_cov_idx = cov_idx - len(self.n_cat_list)
-                    cov_to_sample_idx[cont_covs[sample_idx][cont_cov_idx]] = \
-                        cov_to_sample_idx[cont_covs[sample_idx][cont_cov_idx]] + [sample_idx]
+                if cat_covs[sample_idx][cov_idx] not in cov_to_sample_idx:
+                    cov_to_sample_idx[cat_covs[sample_idx][cov_idx]] = [sample_idx]
                 else:
                     cov_to_sample_idx[cat_covs[sample_idx][cov_idx]] = \
                         cov_to_sample_idx[cat_covs[sample_idx][cov_idx]] + [sample_idx]
@@ -395,21 +395,13 @@ class fairVAE(BaseModuleClass):
 
             zs_cf_cov = []
 
-            # construct z_cf using means
-            # for sample_idx in range(min(len(cat_covs_cf), len(cat_covs))):
             for sample_idx in range(len(cat_covs_cf)):
 
-                if self.is_index_for_cont_cov(cov_idx):
-                    cont_cov_idx = cov_idx - len(self.n_cat_list)
-                    cov_val = cont_covs_cf[sample_idx][cont_cov_idx]
-                    nearest_cov_val = min(cov_to_sample_mean.keys(), key=lambda k: abs(cov_to_sample_mean[k] - cov_val))
-                    zs_cf_i = cov_to_sample_mean[nearest_cov_val]
+                cov_val = cat_covs_cf[sample_idx][cov_idx]
+                if cov_val in cov_to_sample_mean:
+                    zs_cf_i = cov_to_sample_mean[cov_val]
                 else:
-                    cov_val = cat_covs_cf[sample_idx][cov_idx]
-                    if cov_val in cov_to_sample_mean:
-                        zs_cf_i = cov_to_sample_mean[cov_val]
-                    else:
-                        zs_cf_i = torch.zeros(len(zs[cov_idx][0]))
+                    zs_cf_i = torch.zeros(len(zs[cov_idx][0]))
 
                 zs_cf_cov.append(zs_cf_i.to(device))
 
@@ -467,24 +459,15 @@ class fairVAE(BaseModuleClass):
         output_dict["ps"] = []
 
         for i in range(self.zs_num):
+            # p(s|z)
             zs_i = zs[i]
-            s_i_decoder = self.s_decoders_list[i]
-            if self.is_index_for_cont_cov(i):
-                # p(s|z)
-                ps_mean, ps_v = s_i_decoder(x=zs_i)
-                ps = Normal(loc=ps_mean, scale=ps_v.sqrt())
-            else:
-                # p(s|z)
-                size_factor = library_s[i].to(device)
-                ps_scale, ps_r, ps_rate, ps_dropout = s_i_decoder(
-                    self.dispersion,
-                    zs_i,
-                    size_factor,
-                )
-                ps_r = torch.exp(self.ps_r[i]).to(device)
-                ps = NegativeBinomial(mu=ps_rate, theta=ps_r, scale=ps_scale)
+            s_i_classifier = self.s_classifiers_list[i]
 
-            output_dict["ps"].append(ps)
+            ps_i_given_z_i = s_i_classifier(zs_i)
+            ps_i = self.s_prior[i].repeat(ps_i_given_z_i.size(0), 1)
+
+            output_dict["ps|z"].append(ps_i_given_z_i)
+            output_dict["ps"].append(ps_i)
 
         return output_dict
 
@@ -505,42 +488,96 @@ class fairVAE(BaseModuleClass):
 
         reconst_loss_x = -generative_outputs["px"].log_prob(x).sum(-1)
         reconst_loss_x_cf = -generative_outputs["px_cf"].log_prob(x_cf).sum(-1)
+        # reconst_loss_x_cf = torch.tensor([0.])
 
-        cont_covs = inference_outputs["cont_covs"]
-        cont_input = torch.split(cont_covs, 1, dim=1) if cont_covs is not None else None
+        reconst_loss = torch.mean(reconst_loss_x) + torch.mean(reconst_loss_x_cf)
 
+        # cont_covs = inference_outputs["cont_covs"]
+        # cont_input = torch.split(cont_covs, 1, dim=1) if cont_covs is not None else None
+        #
         cat_covs = inference_outputs["cat_covs"]
         cat_input = torch.split(cat_covs, 1, dim=1)
 
-        reconst_loss_s = 0
+        # KL divergence S
+
+        kl_s = [kl(Categorical(generative_outputs["ps|z"][i]),
+                   Categorical(generative_outputs["ps"][i])).sum() * self.alpha[i]
+                for i in range(self.zs_num)]
+
+        # cross entropy (not included in total loss; just for logging)
+
+        ce = []
         for i in range(self.zs_num):
-            s_i = cont_input[i - len(self.n_cat_list)] if self.is_index_for_cont_cov(i) \
-                else one_hot_cat([self.n_cov_list[i]], cat_input[i]).to(device)
+            s_i = one_hot_cat([self.n_cat_list[i]], cat_input[i]).to(device)
+            ce_i = F.cross_entropy(generative_outputs["ps|z"][i], s_i)
+            ce = ce + [ce_i]
 
-            # print(s_i.device)
 
-            reconst_loss_s_i = -generative_outputs["ps"][i].log_prob(s_i).sum(-1)
-            reconst_loss_s += reconst_loss_s_i
-
-        reconst_loss_s *= self.alpha
-
-        reconst_loss = torch.mean(reconst_loss_x) + torch.mean(reconst_loss_x_cf) + torch.mean(reconst_loss_s)
-
-        # KL divergence
+        # KL divergence Z
 
         # TODO: check why VCI used a different approach to compute p(Z | X', S') in KL divergence
         #  by calculating X' as generative_outputs["px_cf"].mean() instead of original X' from data
 
+        # VCI method:
+        # px_cf_mean = generative_outputs["px_cf"].mean
+        #
+        # cont_covs_cf = inference_outputs["cont_covs_cf"]
+        # cat_covs_cf = inference_outputs["cat_covs_cf"]
+        #
+        # new_inference_out = self.inference(px_cf_mean, px_cf_mean,
+        #                                    cont_covs_cf, cont_covs_cf,
+        #                                    cat_covs_cf, cat_covs_cf,
+        #                                    indices_cf, indices_cf)
+        #
+        # kl_divergence_z_shared = kl(inference_outputs["qz_shared"], new_inference_out["qz_shared_cf"]).sum(dim=1)
+        # kl_divergence_zs = [kl(qzs, qzs_cf).sum(dim=1) for qzs, qzs_cf in
+        #                     zip(inference_outputs["qzs"], new_inference_out["qzs_cf"])]
+
+        # our method:
         kl_divergence_z_shared = kl(inference_outputs["qz_shared"], inference_outputs["qz_shared_cf"]).sum(dim=1)
         kl_divergence_zs = [kl(qzs, qzs_cf).sum(dim=1) for qzs, qzs_cf in
                             zip(inference_outputs["qzs"], inference_outputs["qzs_cf"])]
 
-        weighted_kl_local = kl_weight * (kl_divergence_z_shared + sum(kl_divergence_zs))
+        # weighted_kl_local = kl_weight * (kl_divergence_z_shared + sum(kl_divergence_zs))
+        # weighted_kl_local = kl_weight * (4 * kl_divergence_z_shared + sum(kl_divergence_zs))
+        kl_z = (kl_divergence_z_shared + sum(kl_divergence_zs))
 
         # total loss
+        loss = reconst_loss + torch.mean(kl_z) - torch.mean(sum(kl_s)) * kl_weight
+        # loss = reconst_loss + torch.mean(weighted_kl_local) + torch.mean(sum(ce))
+        # loss = reconst_loss + torch.mean(weighted_kl_local) - torch.mean(sum(kl_s))
 
-        loss = reconst_loss + torch.mean(weighted_kl_local)
+        # loss_dict = {
+        #     LOSS_KEYS.LOSS: loss,
+        #     LOSS_KEYS.RECONST_LOSS_X: torch.mean(reconst_loss_x),
+        #     LOSS_KEYS.RECONST_LOSS_X_CF: torch.mean(reconst_loss_x_cf),
+        #     LOSS_KEYS.RECONST_LOSS_S: {LOSS_KEYS.RECONST_LOSS_S + f'{i}': torch.mean(reconst_loss_s[i]) for i in range(self.zs_num)},
+        #     LOSS_KEYS.KL_Z_SHARED: torch.mean(kl_divergence_z_shared),
+        #     LOSS_KEYS.KL_ZS: {LOSS_KEYS.KL_ZS + f'{i}': torch.mean(kl_divergence_zs[i]) for i in range(self.zs_num)}
+        # }
 
-        return LossOutput(
-            loss=loss, reconstruction_loss=reconst_loss_x, kl_local=weighted_kl_local
-        )
+        loss_dict = {
+            LOSS_KEYS.LOSS: loss,
+            LOSS_KEYS.RECONST_LOSS_X: torch.mean(reconst_loss_x),
+            LOSS_KEYS.RECONST_LOSS_X_CF: torch.mean(reconst_loss_x_cf),
+            LOSS_KEYS.KL_S: sum(torch.mean(kl_s[i]) for i in range(self.zs_num)),
+            LOSS_KEYS.CE: sum(torch.mean(ce[i]) for i in range(self.zs_num)),
+            LOSS_KEYS.KL_Z_SHARED: torch.mean(kl_divergence_z_shared),
+            LOSS_KEYS.KL_ZS: sum(torch.mean(kl_divergence_zs[i]) for i in range(self.zs_num))
+        }
+
+        # tune.report(loss_dict)
+
+        return loss_dict
+
+        # return LossOutput(
+        #     loss=loss, reconstruction_loss=reconst_loss_x, kl_local=weighted_kl_local
+        # )
+
+    # @classproperty
+    # def _tunables(cls):
+    #     return [cls.__init__, cls.loss]
+    #
+    # @classproperty
+    # def _metrics(cls):
+    #     return LOSS_KEYS_LIST
