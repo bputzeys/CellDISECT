@@ -22,7 +22,7 @@ from torchmetrics import Accuracy, F1Score
 
 torch.backends.cudnn.benchmark = True
 
-from ._utils import *
+from .utils import *
 
 from scvi.module._classifier import Classifier
 
