@@ -1,13 +1,11 @@
 import random
 from collections import OrderedDict
 from typing import Callable, Dict, Iterable, Literal, Optional, Union, List
-from enum import Enum
 
 import optax
 import torch
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
-from scvi.autotune._types import Tunable, TunableMixin
 from scvi.module import Classifier
 from scvi.module.base import BaseModuleClass, LossOutput
 JaxOptimizerCreator = Callable[[], optax.GradientTransformation]
@@ -98,6 +96,7 @@ class FairVITrainingPlan(TrainingPlan):
         scale_adversarial_loss: Union[float, Literal["auto"]] = "auto",
         beta: Tunable[float] = 1.0,  # coef for TC term
         mode: int = 0,
+        adv_period: int = 1,
         **loss_kwargs,
     ):
         super().__init__(
@@ -118,6 +117,7 @@ class FairVITrainingPlan(TrainingPlan):
         )
         self.beta = beta
         self.mode = mode
+        self.adv_period = adv_period
 
         self.loss_kwargs.update({"classification_ratio": classification_ratio})
 
@@ -135,6 +135,7 @@ class FairVITrainingPlan(TrainingPlan):
         self.scale_adversarial_loss = scale_adversarial_loss
 
         self.automatic_optimization = False
+
 
     @staticmethod
     def _create_elbo_metric_components(mode: str, n_total: Optional[int] = None):
@@ -201,7 +202,6 @@ class FairVITrainingPlan(TrainingPlan):
             z_concat = torch.cat([z_shared, zs_concat], dim=-1).to(device)
             # permute z
             z_list_perm = [z_shared] + zs
-            # z_list_perm = self.permute_z(z_list_perm)
             random.shuffle(z_list_perm)
             z_shared_perm = z_list_perm[0]
             zs_perm = z_list_perm[1:]
@@ -257,34 +257,36 @@ class FairVITrainingPlan(TrainingPlan):
         )
         z_shared = inference_outputs["z_shared"]
         zs = inference_outputs["zs"]
-        loss = losses[LOSS_KEYS.LOSS]
-        # fool classifier if doing adversarial training
-        if self.mode >= TRAIN_MODE.ADVERSARIAL and kappa > 0 and self.adversarial_classifier is not False:
-            fool_loss = self.loss_adversarial_classifier(z_shared, zs, False) * self.beta
-            loss += fool_loss * kappa
 
-            self.log("adv_fool_loss_train", fool_loss, on_step=False, on_epoch=True, prog_bar=True)
+        if self.current_epoch % self.adv_period == 0 or self.mode < TRAIN_MODE.ADVERSARIAL:
 
-        self.compute_and_log_metrics(losses, self.train_metrics, "train")
+            loss = losses[LOSS_KEYS.LOSS]
+            # fool classifier if doing adversarial training
+            if self.mode >= TRAIN_MODE.ADVERSARIAL and kappa > 0 and self.adversarial_classifier is not False:
+                fool_loss = self.loss_adversarial_classifier(z_shared, zs, False) * self.beta
+                loss += fool_loss * kappa
 
-        opt1.zero_grad()
-        self.manual_backward(loss)
-        opt1.step()
+                self.log("adv_fool_loss_train", fool_loss, on_step=False, on_epoch=True, prog_bar=True)
 
-        # train adversarial classifier
-        # this condition will not be met unless self.adversarial_classifier is not False
-        if self.mode >= TRAIN_MODE.ADVERSARIAL and opt2 is not None:
-            loss = self.loss_adversarial_classifier(z_shared, zs, True)
+            self.compute_and_log_metrics(losses, self.train_metrics, "train")
 
-            self.log("adv_loss_train", loss, on_step=False, on_epoch=True, prog_bar=True)
-
-            # tune
-            # tune.report({"loss_adversarial": loss})
-
-            loss *= kappa
-            opt2.zero_grad()
+            opt1.zero_grad()
             self.manual_backward(loss)
-            opt2.step()
+            opt1.step()
+
+        if self.adv_period == 1 or (self.current_epoch % self.adv_period != 0 and self.mode >= TRAIN_MODE.ADVERSARIAL):
+
+            # train adversarial classifier
+            # this condition will not be met unless self.adversarial_classifier is not False
+            if self.mode >= TRAIN_MODE.ADVERSARIAL and opt2 is not None:
+                loss = self.loss_adversarial_classifier(z_shared, zs, True)
+
+                self.log("adv_loss_train", loss, on_step=False, on_epoch=True, prog_bar=True)
+
+                loss *= kappa
+                opt2.zero_grad()
+                self.manual_backward(loss)
+                opt2.step()
 
         results = {}
         for key in LOSS_KEYS_LIST:
@@ -317,13 +319,6 @@ class FairVITrainingPlan(TrainingPlan):
         # results.update({"generative_mean_accuracy": r2_mean})
         # results.update({"generative_var_accuracy": r2_var})
         # results.update({"biolord_metric": biolord_metric(r2_mean, r2_var)})
-
-        # log metrics
-        # for key in self.epoch_keys:
-        #     if isinstance(results[key], dict):
-        #         self.log_dict(results[key], on_epoch=True, prog_bar=True)
-        #     else:
-        #         self.log(f"val_{key}", results[key], on_epoch=True, prog_bar=True)
 
         return results
 
@@ -385,3 +380,6 @@ class FairVITrainingPlan(TrainingPlan):
                 scheds = [config1["lr_scheduler"]]
                 return opts, scheds
             else:
+                return opts
+
+        return config1
