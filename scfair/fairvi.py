@@ -26,14 +26,10 @@ from scvi.model.base import RNASeqMixin, VAEMixin, BaseModelClass
 
 logger = logging.getLogger(__name__)
 
-
 from .fairvae import fairVAE
 from .trainingplan import FairVITrainingPlan
 
-
-
 from .fairvi_datasplitter import FairVIDataSplitter
-
 
 # for hyperparameter tuning
 from ray import tune
@@ -81,8 +77,8 @@ class FairVI(
     Examples
     --------
     >>> adata = anndata.read_h5ad(path_to_anndata)
-    >>> scvi.model.SCVI.setup_anndata(adata, batch_key="batch")
-    >>> vae = scvi.model.SCVI(adata)
+    >>> FairVI.setup_anndata(adata, batch_key="batch")
+    >>> vae = FairVI(adata)
     >>> vae.train()
     >>> adata.obsm["X_scVI"] = vae.get_latent_representation()
     >>> adata.obsm["X_normalized_scVI"] = vae.get_normalized_expression()
@@ -331,12 +327,10 @@ class FairVI(
 
 
     # @devices_dsp.dedent
-        def train(
+    def train(
         self,
         max_epochs: Optional[int] = None,
         use_gpu: Optional[Union[str, int, bool]] = None,
-        accelerator: str = "auto",
-        devices: Union[int, List[int], str] = "auto",
         train_size: float = 0.8,
         validation_size: Optional[float] = None,
         batch_size: int = 512,
@@ -400,8 +394,6 @@ class FairVI(
             data_splitter=data_splitter,
             max_epochs=max_epochs,
             use_gpu=use_gpu,
-            # accelerator=accelerator,
-            # devices=devices,
             **trainer_kwargs,
         )
         return runner()
