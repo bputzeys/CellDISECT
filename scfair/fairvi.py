@@ -331,7 +331,7 @@ class FairVI(
 
 
     # @devices_dsp.dedent
-    def train(
+        def train(
         self,
         max_epochs: Optional[int] = None,
         use_gpu: Optional[Union[str, int, bool]] = None,
@@ -343,6 +343,7 @@ class FairVI(
         early_stopping: bool = True,
         plan_kwargs: Optional[dict] = None,
         mode: int = 0,
+        adv_period: int = 1,
         **trainer_kwargs,
     ):
         """Train the model.
@@ -386,7 +387,7 @@ class FairVI(
             shuffle_set_split=True,
             batch_size=batch_size,
         )
-        training_plan = self._training_plan_cls(self.module, beta=self.beta, mode=mode, **plan_kwargs)
+        training_plan = self._training_plan_cls(self.module, beta=self.beta, mode=mode, adv_period=adv_period, **plan_kwargs)
 
         es = "early_stopping"
         trainer_kwargs[es] = (
