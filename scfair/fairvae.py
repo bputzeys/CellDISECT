@@ -654,3 +654,5 @@ class fairVAE(BaseModuleClass):
         }
 
         return loss_dict
+
+    
