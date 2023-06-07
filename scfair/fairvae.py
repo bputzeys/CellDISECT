@@ -543,8 +543,8 @@ class fairVAE(BaseModuleClass):
         reconst_x_losses = [-torch.mean(px.log_prob(x).sum(-1)) for px in generative_outputs["px"]]
         reconst_x_cf_losses = [-torch.mean(px_cf.log_prob(x_cf).sum(-1)) for px_cf in generative_outputs["px_cf"]]
 
-        reconst_loss_x = torch.mean(reconst_x_losses)
-        reconst_loss_x_cf = torch.mean(reconst_x_cf_losses)
+        reconst_loss_x = sum(reconst_x_losses)
+        reconst_loss_x_cf = sum(reconst_x_cf_losses)
 
         reconst_loss = reconst_loss_x + reconst_loss_x_cf
 
