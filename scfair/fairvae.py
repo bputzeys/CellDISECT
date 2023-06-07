@@ -38,8 +38,8 @@ from ray import tune
 from scvi._decorators import classproperty
 from scvi.autotune._types import Tunable, TunableMixin
 
-
 for_train = True
+
 
 class fairVAE(BaseModuleClass):
     """Fair Variational auto-encoder module.
@@ -102,7 +102,7 @@ class fairVAE(BaseModuleClass):
             use_batch_norm: Tunable[Literal["encoder", "decoder", "none", "both"]] = "both",
             use_layer_norm: Tunable[Literal["encoder", "decoder", "none", "both"]] = "none",
             var_activation: Optional[Callable] = None,
-            alpha: Tunable[Union[List[float], Tuple[float], float]] = 1.0,  # coef for P(Si|Zi)
+            alpha: Tunable[Union[List[float], Tuple[float], float]] = 1.0,  # coef for KL Zi
             beta: Tunable[float] = 1.0,  # coef for TC term
     ):
         super().__init__()
@@ -133,7 +133,7 @@ class fairVAE(BaseModuleClass):
         # TODO: should be changed (e.g. some cont_covs (pc_i) might be grouped to 1 zs)
 
         if isinstance(self.alpha, float):
-            self.alpha = [self.alpha for _ in range(self.zs_num)]
+            self.alpha = [self.alpha for _ in range(self.zs_num + 1)]
 
         self.z_encoders_list = nn.ModuleList(
             [
@@ -225,7 +225,7 @@ class fairVAE(BaseModuleClass):
                 FCLayers(
                     n_in=n_latent_shared,
                     n_out=n_latent_shared,
-                    n_cat_list=[self.n_cat_list[i], self.n_cat_list[i]],    # cov, cov_cf
+                    n_cat_list=[self.n_cat_list[i], self.n_cat_list[i]],  # cov, cov_cf
                     n_layers=0,
                     n_hidden=n_latent_shared,
                 ).to(device)
@@ -239,11 +239,11 @@ class fairVAE(BaseModuleClass):
         self.ps_r = [nn.Parameter(torch.randn(self.n_cat_list[i])).to(device) for i in range(self.zs_num)]
 
     def set_require_grad(self, mode: int):
-        if mode < TRAIN_MODE.CLASSIFICATION:   # train all Z_i (encoders and decoders)
+        if mode < TRAIN_MODE.CLASSIFICATION:  # train all Z_i (encoders and decoders)
             for classifier in self.s_classifiers_list:
                 classifier.requires_grad = False
 
-        else:   # add classifiers P(Si | Zi) for all i
+        else:  # add classifiers P(Si | Zi) for all i
             for classifier in self.s_classifiers_list:
                 classifier.requires_grad = True
 
@@ -424,31 +424,32 @@ class fairVAE(BaseModuleClass):
             cat_in = ()
             cat_in_cf = ()
 
-        all_cat_in = []
-        all_cat_in_cf = []
+        cats_in_but_one = []
+        cats_in_cf_but_one = []
         for i in range(self.zs_num):
-            all_cat_in.append([cat_in[j] for j in range(len(cat_in)) if j != i])
-            all_cat_in_cf.append([cat_in_cf[j] for j in range(len(cat_in_cf)) if j != i])
+            cats_in_but_one.append([cat_in[j] for j in range(len(cat_in)) if j != i])
+            cats_in_cf_but_one.append([cat_in_cf[j] for j in range(len(cat_in_cf)) if j != i])
 
         for k in [0, 1]:
             # p(x|z), p(x|z')
 
-            cats = [cat_in, cat_in_cf][k]
-            all_cats = [all_cat_in, all_cat_in_cf][k]
-
-            z_shared_k = z_shared
+            all_cats = [cat_in, cat_in_cf][k]
+            all_cats_but_one = [cats_in_but_one, cats_in_cf_but_one][k]
 
             for i in range(self.zs_num + 1):
 
                 if i == 0:
-                    x_decoder_input = z_shared_k
+                    x_decoder_input = z_shared
                 else:
-                    x_decoder_input = self.z_to_zcf_nn[i-1](zs[i-1], cat_in[i-1], cat_in_cf[i-1])
+                    if k == 0:
+                        x_decoder_input = zs[i - 1]
+                    else:
+                        x_decoder_input = self.z_to_zcf_nn[i - 1](zs[i - 1], cat_in[i - 1], cat_in_cf[i - 1])
 
                 size_factor = [library, library_cf][k]
 
                 x_decoder = self.x_decoders_list[i]
-                dec_covs = cats if i == 0 else all_cats[i - 1]
+                dec_covs = all_cats if i == 0 else all_cats_but_one[i - 1]
 
                 px_scale, px_r, px_rate, px_dropout = x_decoder(
                     self.dispersion,
@@ -505,7 +506,7 @@ class fairVAE(BaseModuleClass):
         ce_loss = []
         logits = []
         for i in range(self.zs_num):
-            zs_i = self.z_encoders_list[i+1](x)[1].to(device)
+            zs_i = self.z_encoders_list[i + 1](x)[1].to(device)
 
             s_i_classifier = self.s_classifiers_list[i]
             logits_i = s_i_classifier(zs_i)
@@ -554,7 +555,7 @@ class fairVAE(BaseModuleClass):
         # KL divergence S
 
         kl_s = [kl(Categorical(generative_outputs["ps"][i]),
-                   Categorical(generative_outputs["ps|z"][i])).sum() * self.alpha[i]
+                   Categorical(generative_outputs["ps|z"][i])).sum() * kl_weight
                 for i in range(self.zs_num)]
 
         kl_s_sum = sum(torch.mean(kl_s[i]) for i in range(self.zs_num))
@@ -578,7 +579,7 @@ class fairVAE(BaseModuleClass):
 
         accuracy = sum(accuracy_scores)
         f1 = sum(f1_scores)
-        
+
         # KL divergence Z
 
         px_cf_mean_list = [px_cf.mean for px_cf in generative_outputs["px_cf"]]
@@ -599,10 +600,10 @@ class fairVAE(BaseModuleClass):
 
         kl_z_shared = kl(inference_outputs["qz_shared"], new_inference_out["qz_shared_cf"]).sum(dim=1)
         kl_zs = [kl(qzs, qzs_cf).sum(dim=1) for qzs, qzs_cf in
-                            zip(inference_outputs["qzs"], new_inference_out["qzs_cf"])]
+                 zip(inference_outputs["qzs"], new_inference_out["qzs_cf"])]
 
-        kl_zs_sum = sum([torch.mean(kl_z_i) for kl_z_i in kl_zs])
-        kl_z = torch.mean(kl_z_shared) + kl_zs_sum
+        kl_zs_sum = sum([torch.mean(kl_zs[i] * self.alpha[i]) for i in range(len(kl_zs))])
+        kl_z = torch.mean(kl_z_shared) * self.alpha[-1] + kl_zs_sum
 
         # total loss
         loss = reconst_loss
