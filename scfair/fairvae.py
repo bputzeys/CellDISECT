@@ -73,6 +73,8 @@ class fairVAE(BaseModuleClass):
         One of
         * ``'normal'`` - Isotropic normal
         * ``'ln'`` - Logistic normal with normal params N(0, 1)
+    encode_covariates
+        Whether to concatenate covariates to expression in encoder
     deeply_inject_covariates
         Whether to concatenate covariates into output of hidden layers in encoder/decoder. This option
         only applies when `n_layers` > 1. The covariates are concatenated to the input of subsequent hidden layers.
@@ -98,6 +100,7 @@ class fairVAE(BaseModuleClass):
             log_variational: bool = True,
             gene_likelihood: Tunable[Literal["zinb", "nb", "poisson"]] = "zinb",
             latent_distribution: Tunable[Literal["normal", "ln"]] = "normal",
+            encode_covariates: Tunable[bool] = False,
             deeply_inject_covariates: Tunable[bool] = True,
             use_batch_norm: Tunable[Literal["encoder", "decoder", "none", "both"]] = "both",
             use_layer_norm: Tunable[Literal["encoder", "decoder", "none", "both"]] = "none",
@@ -113,6 +116,7 @@ class fairVAE(BaseModuleClass):
         self.gene_likelihood = gene_likelihood
         # Automatically deactivate if useless
         self.latent_distribution = latent_distribution
+        self.encode_covariates = encode_covariates
 
         self.alpha = alpha
         self.beta = beta
@@ -140,7 +144,7 @@ class fairVAE(BaseModuleClass):
                 Encoder(
                     n_input_encoder,
                     n_latent_shared,
-                    # n_cat_list=self.n_cat_list,
+                    n_cat_list=self.n_cat_list if self.encode_covariates else None,
                     n_layers=n_layers,
                     n_hidden=n_hidden,
                     dropout_rate=dropout_rate,
@@ -159,7 +163,7 @@ class fairVAE(BaseModuleClass):
                 Encoder(
                     n_input_encoder,
                     n_latent_attribute,
-                    # n_cat_list=[self.n_cat_list[i] for i in range(len(self.n_cat_list)) if i != k],
+                    n_cat_list=[self.n_cat_list[i] for i in range(len(self.n_cat_list)) if i != k] if self.encode_covariates else None,
                     n_layers=n_layers,
                     n_hidden=n_hidden,
                     dropout_rate=dropout_rate,
@@ -223,11 +227,11 @@ class fairVAE(BaseModuleClass):
         self.z_to_zcf_nn = nn.ModuleList(
             [
                 FCLayers(
-                    n_in=n_latent_shared,
-                    n_out=n_latent_shared,
+                    n_in=n_latent_attribute,
+                    n_out=n_latent_attribute,
                     n_cat_list=[self.n_cat_list[i], self.n_cat_list[i]],  # cov, cov_cf
                     n_layers=0,
-                    n_hidden=n_latent_shared,
+                    n_hidden=n_latent_attribute,
                 ).to(device)
                 for i in range(self.zs_num)
             ]
@@ -338,7 +342,7 @@ class fairVAE(BaseModuleClass):
 
         library_s = []
 
-        if cont_covs is not None:
+        if cont_covs is not None and self.encode_covariates:
             encoder_input = torch.cat((x_, cont_covs), dim=-1)
             encoder_input_cf = torch.cat((x_cf_, cont_covs_cf), dim=-1)
             cont_input = torch.split(cont_covs, 1, dim=1)
@@ -347,17 +351,36 @@ class fairVAE(BaseModuleClass):
             encoder_input = x_
             encoder_input_cf = x_cf_
 
-        qz_shared, z_shared = self.z_encoders_list[0](encoder_input)
-        qz_shared_cf, z_shared_cf = self.z_encoders_list[0](encoder_input_cf)
+        if cat_covs is not None and self.encode_covariates:
+            cat_in = torch.split(cat_covs, 1, dim=1)
+        else:
+            cat_in = ()
+
+        if cat_covs_cf is not None and self.encode_covariates:
+            cat_in_cf = torch.split(cat_covs_cf, 1, dim=1)
+        else:
+            cat_in_cf = ()
+
+        qz_shared, z_shared = self.z_encoders_list[0](encoder_input, *cat_in)
+        qz_shared_cf, z_shared_cf = self.z_encoders_list[0](encoder_input_cf, *cat_in_cf)
         z_shared = z_shared.to(device)
         z_shared_cf = z_shared_cf.to(device)
 
-        encoders_outputs = [self.z_encoders_list[i + 1](encoder_input)
+        cats_in_but_one = []
+        cats_in_cf_but_one = []
+        for i in range(self.zs_num):
+            cats_in_but_one.append([cat_in[j] for j in range(len(cat_in)) if j != i]
+                                   if self.encode_covariates else [])
+        for i in range(self.zs_num):
+            cats_in_cf_but_one.append([cat_in_cf[j] for j in range(len(cat_in_cf)) if j != i]
+                                      if self.encode_covariates else [])
+
+        encoders_outputs = [self.z_encoders_list[i + 1](encoder_input, *cats_in_but_one[i])
                             for i in range(len(self.z_encoders_list) - 1)]
         qzs = [enc_out[0] for enc_out in encoders_outputs]
         zs = [enc_out[1].to(device) for enc_out in encoders_outputs]
 
-        encoders_outputs_cf = [self.z_encoders_list[i + 1](encoder_input_cf)
+        encoders_outputs_cf = [self.z_encoders_list[i + 1](encoder_input_cf, *cats_in_cf_but_one[i])
                                for i in range(len(self.z_encoders_list) - 1)]
         qzs_cf = [enc_out[0] for enc_out in encoders_outputs_cf]
         zs_cf = [enc_out[1].to(device) for enc_out in encoders_outputs_cf]
@@ -503,10 +526,14 @@ class fairVAE(BaseModuleClass):
         else:
             cat_in = ()
 
+        cats_in_but_one = []
+        for i in range(self.zs_num):
+            cats_in_but_one.append([cat_in[j] for j in range(len(cat_in)) if j != i] if self.encode_covariates else [])
+
         ce_loss = []
         logits = []
         for i in range(self.zs_num):
-            zs_i = self.z_encoders_list[i + 1](x)[1].to(device)
+            zs_i = self.z_encoders_list[i + 1](x, *cats_in_but_one[i])[1].to(device)
 
             s_i_classifier = self.s_classifiers_list[i]
             logits_i = s_i_classifier(zs_i)
