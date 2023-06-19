@@ -120,7 +120,6 @@ class FairVITrainingPlan(TrainingPlan):
         self.adv_period = adv_period
 
         self.loss_kwargs.update({"classification_ratio": classification_ratio})
-        self.loss_kwargs.update({"mode": mode})
 
         if adversarial_classifier is True:
             self.n_output_classifier = 2
