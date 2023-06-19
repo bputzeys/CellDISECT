@@ -9,9 +9,10 @@ from enum import Enum
 
 class TRAIN_MODE(int, Enum):
     RECONST = 0
-    KL_Z = 1
-    CLASSIFICATION = 2
-    ADVERSARIAL = 3
+    RECONST_CF = 1
+    KL_Z = 2
+    CLASSIFICATION = 3
+    ADVERSARIAL = 4
 
 
 class LOSS_KEYS(str, Enum):
