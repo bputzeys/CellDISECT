@@ -107,6 +107,7 @@ class fairVAE(BaseModuleClass):
             var_activation: Optional[Callable] = None,
             alpha: Tunable[Union[List[float], Tuple[float], float]] = 1.0,  # coef for KL Zi
             beta: Tunable[float] = 1.0,  # coef for TC term
+            mode: Tuple[int] = (0,),
     ):
         super().__init__()
         self.dispersion = "gene"
@@ -120,6 +121,7 @@ class fairVAE(BaseModuleClass):
 
         self.alpha = alpha
         self.beta = beta
+        self.mode = mode
 
         self.px_r = torch.nn.Parameter(torch.randn(n_input)).to(device)
 
@@ -242,8 +244,8 @@ class fairVAE(BaseModuleClass):
 
         self.ps_r = [nn.Parameter(torch.randn(self.n_cat_list[i])).to(device) for i in range(self.zs_num)]
 
-    def set_require_grad(self, mode: int):
-        if mode < TRAIN_MODE.CLASSIFICATION:  # train all Z_i (encoders and decoders)
+    def set_require_grad(self):
+        if TRAIN_MODE.CLASSIFICATION not in self.mode:  # train all Z_i (encoders and decoders)
             for classifier in self.s_classifiers_list:
                 classifier.requires_grad = False
 
@@ -263,7 +265,7 @@ class fairVAE(BaseModuleClass):
         batch_size = cat_covs_tot.size(dim=dim_indices)
         indices = torch.tensor(list(range(batch_size))).to(device)
         indices_cf = torch.tensor(list(range(batch_size))).to(device)
-        if for_train:
+        if for_train and (TRAIN_MODE.RECONST_CF in self.mode):
             # indices, indices_cf = get_paired_indices(cont_covs_tot, cat_covs_tot, dim_indices)
             indices = torch.tensor(list(range(batch_size // 2))).to(device)
             indices_cf = torch.tensor(list(range(batch_size // 2, 2 * (batch_size // 2)))).to(device)
@@ -558,7 +560,6 @@ class fairVAE(BaseModuleClass):
             kl_weight: float = 1.0,
             labelled_tensors=None,
             classification_ratio=None,
-            mode=0
     ):
         indices = inference_outputs["indices"]
         indices_cf = inference_outputs["indices_cf"]
@@ -574,7 +575,7 @@ class fairVAE(BaseModuleClass):
         reconst_loss_x = sum(reconst_x_losses)
         reconst_loss_x_cf = sum(reconst_x_cf_losses)
 
-        reconst_loss = reconst_loss_x + reconst_loss_x_cf
+        # reconst_loss = reconst_loss_x + reconst_loss_x_cf
 
         cat_covs = inference_outputs["cat_covs"]
         cat_input = torch.split(cat_covs, 1, dim=1)
@@ -629,17 +630,19 @@ class fairVAE(BaseModuleClass):
         kl_zs = [kl(qzs, qzs_cf).sum(dim=1) for qzs, qzs_cf in
                  zip(inference_outputs["qzs"], new_inference_out["qzs_cf"])]
 
-        kl_zs_sum = sum([torch.mean(kl_zs[i] * self.alpha[i]) for i in range(len(kl_zs))])
-        kl_z = torch.mean(kl_z_shared) * self.alpha[-1] + kl_zs_sum
+        kl_zs_sum = sum([torch.mean(kl_zs[i] * self.alpha[i+1]) for i in range(len(kl_zs))])
+        kl_z = torch.mean(kl_z_shared) * self.alpha[0] + kl_zs_sum
 
         # total loss
-        loss = reconst_loss
-        if mode >= TRAIN_MODE.KL_Z:
+        loss = reconst_loss_x
+        if TRAIN_MODE.RECONST_CF in self.mode:
+            loss += reconst_loss_x_cf
+        if TRAIN_MODE.KL_Z in self.mode:
             loss += kl_z
-        # if mode >= :
-        #     loss += torch.mean(sum(kl_s)) * kl_weight
-        if mode >= TRAIN_MODE.CLASSIFICATION:
+        if TRAIN_MODE.CLASSIFICATION in self.mode:
             loss += ce_loss * classification_ratio
+        # if  in mode:
+        #     loss += torch.mean(sum(kl_s)) * kl_weight
 
         loss_dict = {
             LOSS_KEYS.LOSS: loss,

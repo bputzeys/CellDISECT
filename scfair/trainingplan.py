@@ -1,6 +1,6 @@
 import random
 from collections import OrderedDict
-from typing import Callable, Dict, Iterable, Literal, Optional, Union, List
+from typing import Callable, Dict, Iterable, Literal, Optional, Union, List, Tuple
 
 import optax
 import torch
@@ -95,7 +95,7 @@ class FairVITrainingPlan(TrainingPlan):
         adversarial_classifier: Union[bool, Classifier] = True,
         scale_adversarial_loss: Union[float, Literal["auto"]] = "auto",
         beta: Tunable[float] = 1.0,  # coef for TC term
-        mode: int = 0,
+        mode: Tuple[int] = (0,),
         adv_period: int = 1,
         **loss_kwargs,
     ):
@@ -120,6 +120,7 @@ class FairVITrainingPlan(TrainingPlan):
         self.adv_period = adv_period
 
         self.loss_kwargs.update({"classification_ratio": classification_ratio})
+        self.loss_kwargs.update({"mode": mode})
 
         if adversarial_classifier is True:
             self.n_output_classifier = 2
@@ -207,17 +208,10 @@ class FairVITrainingPlan(TrainingPlan):
             zs_perm = z_list_perm[1:]
             zs_concat_perm = torch.cat(zs_perm, dim=-1).to(device)
             z_concat_perm = torch.cat([z_shared_perm, zs_concat_perm], dim=-1).to(device)
-            # mix permuted z and unpermuted z
-            z_concat_mixed = torch.cat([z_concat, z_concat_perm], dim=0).to(device)
-            perm_batch_idx = torch.randperm(z_concat_mixed.size(0)).to(device)
-            z_concat_mixed = z_concat_mixed[perm_batch_idx, :]
             # give to adversarial_classifier and compute loss
-            cls_pred = torch.nn.LogSoftmax(dim=1)(self.adversarial_classifier(z_concat_mixed)).to(device)
-            true_idx = torch.tensor([i for i in range(int(z_concat_mixed.size(0))) if perm_batch_idx[i] < z_concat.size(0)]).to(device)
-            false_idx = torch.tensor([i for i in range(int(z_concat_mixed.size(0))) if perm_batch_idx[i] >= z_concat.size(0)]).to(device)
-            true_pred = torch.index_select(cls_pred, dim=0, index=true_idx).to(device)
-            false_pred = torch.index_select(cls_pred, dim=0, index=false_idx).to(device)
-            loss = -(torch.mean(true_pred[:, 0]) + torch.mean(false_pred[:, 1])) / 2
+            true_pred = torch.nn.LogSoftmax(dim=1)(self.adversarial_classifier(z_concat)).to(device)
+            false_pred = torch.nn.LogSoftmax(dim=1)(self.adversarial_classifier(z_concat_perm)).to(device)
+            loss = -(torch.mean(true_pred[:, 0]) + torch.mean(false_pred[:, 1]))
         else:
             zs_concat = torch.cat(zs, dim=-1).to(device)
             z_concat = torch.cat([z_shared, zs_concat], dim=-1).to(device)
@@ -248,7 +242,6 @@ class FairVITrainingPlan(TrainingPlan):
 
         input_kwargs = {
             "labelled_tensors": labelled_dataset,
-            "mode": self.mode
         }
         input_kwargs.update(self.loss_kwargs)
 
@@ -258,11 +251,11 @@ class FairVITrainingPlan(TrainingPlan):
         z_shared = inference_outputs["z_shared"]
         zs = inference_outputs["zs"]
 
-        if self.current_epoch % self.adv_period == 0 or self.mode < TRAIN_MODE.ADVERSARIAL:
+        if self.current_epoch % self.adv_period == 0 or (TRAIN_MODE.ADVERSARIAL not in self.mode):
 
             loss = losses[LOSS_KEYS.LOSS]
             # fool classifier if doing adversarial training
-            if self.mode >= TRAIN_MODE.ADVERSARIAL and kappa > 0 and self.adversarial_classifier is not False:
+            if (TRAIN_MODE.ADVERSARIAL in self.mode) and kappa > 0 and (self.adversarial_classifier is not False):
                 fool_loss = self.loss_adversarial_classifier(z_shared, zs, False) * self.beta
                 loss += fool_loss * kappa
 
@@ -274,11 +267,10 @@ class FairVITrainingPlan(TrainingPlan):
             self.manual_backward(loss)
             opt1.step()
 
-        if self.adv_period == 1 or (self.current_epoch % self.adv_period != 0 and self.mode >= TRAIN_MODE.ADVERSARIAL):
+        if self.adv_period == 1 or (self.current_epoch % self.adv_period != 0 and (TRAIN_MODE.ADVERSARIAL in self.mode)):
 
             # train adversarial classifier
-            # this condition will not be met unless self.adversarial_classifier is not False
-            if self.mode >= TRAIN_MODE.ADVERSARIAL and opt2 is not None:
+            if (TRAIN_MODE.ADVERSARIAL in self.mode) and (opt2 is not None):
                 loss = self.loss_adversarial_classifier(z_shared, zs, True)
 
                 self.log("adv_loss_train", loss, on_step=False, on_epoch=True, prog_bar=True)
@@ -300,7 +292,6 @@ class FairVITrainingPlan(TrainingPlan):
 
         input_kwargs = {
             "labelled_tensors": labelled_dataset,
-            "mode": self.mode
         }
         input_kwargs.update(self.loss_kwargs)
 
@@ -310,15 +301,18 @@ class FairVITrainingPlan(TrainingPlan):
 
         self.compute_and_log_metrics(losses, self.val_metrics, "validation")
 
+        # log adversarial metrics
+        z_shared = inf_outputs["z_shared"].detach()
+        zs = [z.detach() for z in inf_outputs["zs"]]
+        fool_loss = self.loss_adversarial_classifier(z_shared, zs, False)
+        adv_loss = self.loss_adversarial_classifier(z_shared, zs, True)
+        self.log("adv_fool_loss_validation", fool_loss, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("adv_loss_validation", adv_loss, on_step=False, on_epoch=True, prog_bar=True)
+
+
         results = {}
         for key in losses:
             results.update({key: losses[key]})
-
-        # add new metrics:
-        # r2_mean, r2_var = self.module.r2_metric(batch, gen_outputs)
-        # results.update({"generative_mean_accuracy": r2_mean})
-        # results.update({"generative_var_accuracy": r2_var})
-        # results.update({"biolord_metric": biolord_metric(r2_mean, r2_var)})
 
         return results
 
