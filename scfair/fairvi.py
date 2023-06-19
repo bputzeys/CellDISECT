@@ -99,14 +99,16 @@ class FairVI(
         dropout_rate: float = 0.1,
         gene_likelihood: Literal["zinb", "nb", "poisson"] = "zinb",
         latent_distribution: Literal["normal", "ln"] = "normal",
-        alpha: Tunable[Union[List[float], Tuple[float], float]] = 1.0,  # coef for P(Si|Zi)
+        alpha: Tunable[Union[List[float], Tuple[float], float]] = 1.0,  # coef for KL Zi
         beta: Tunable[float] = 1.0,   # coef for TC term
+        mode: Tuple[int] = (0,),
         **model_kwargs,
     ):
         super().__init__(adata)
 
         self.alpha = alpha
         self.beta = beta
+        self.mode = mode
 
         n_cats_per_cov = (
             self.adata_manager.get_state_registry(
@@ -129,6 +131,7 @@ class FairVI(
             latent_distribution=latent_distribution,
             alpha=alpha,
             beta=beta,
+            mode=mode,
             **model_kwargs,
         )
         self._model_summary_string = (
@@ -336,8 +339,8 @@ class FairVI(
         batch_size: int = 512,
         early_stopping: bool = True,
         plan_kwargs: Optional[dict] = None,
-        mode: int = 0,
         adv_period: int = 1,
+        classification_ratio: int = 50,
         **trainer_kwargs,
     ):
         """Train the model.
@@ -366,7 +369,7 @@ class FairVI(
             Other keyword args for :class:`~scvi.train.Trainer`.
         """
 
-        self.module.set_require_grad(mode)
+        self.module.set_require_grad()
 
         n_cells = self.adata.n_obs
         if max_epochs is None:
@@ -381,7 +384,9 @@ class FairVI(
             shuffle_set_split=True,
             batch_size=batch_size,
         )
-        training_plan = self._training_plan_cls(self.module, beta=self.beta, mode=mode, adv_period=adv_period, **plan_kwargs)
+        training_plan = self._training_plan_cls(self.module, beta=self.beta, mode=self.mode,
+                                                adv_period=adv_period, classification_ratio=classification_ratio,
+                                                **plan_kwargs)
 
         es = "early_stopping"
         trainer_kwargs[es] = (
