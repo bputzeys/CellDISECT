@@ -148,6 +148,10 @@ class FairVI(
         )
         self.init_params_ = self._get_init_params(locals())
 
+    def set_mode(self, mode):
+        self.mode = mode
+        self.module.mode = mode
+
     @classmethod
     @setup_anndata_dsp.dedent
     def setup_anndata(
