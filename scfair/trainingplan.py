@@ -20,7 +20,7 @@ from scvi.train._metrics import ElboMetric
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 # for hyperparameter tuning
-from ray import tune
+# from ray import tune
 from scvi._decorators import classproperty
 from scvi.autotune._types import Tunable, TunableMixin
 
@@ -81,7 +81,7 @@ class FairVITrainingPlan(TrainingPlan):
         *,
         optimizer: Tunable[Literal["Adam", "AdamW", "Custom"]] = "Adam",
         optimizer_creator: Optional[TorchOptimizerCreator] = None,
-        classification_ratio: int = 50,
+        classification_ratio: int = 200,
         lr: Tunable[float] = 1e-3,
         weight_decay: Tunable[float] = 1e-5,
         n_steps_kl_warmup: Tunable[int] = None,
@@ -174,9 +174,14 @@ class FairVITrainingPlan(TrainingPlan):
             extra metrics
         """
 
-        for met_name in LOSS_KEYS_LIST:
+        for met_name in loss_output:
             metrics[f"{met_name}_{mode}"] = loss_output[met_name]
             if isinstance(loss_output[met_name], dict):
+                # add mode to loss_output[met_name]'s keys
+                keys = list(loss_output[met_name].keys())
+                for key in keys:
+                    loss_output[met_name][f"{key}_{mode}"] = loss_output[met_name][key]
+                    del loss_output[met_name][key]
                 self.log_dict(
                     loss_output[met_name],
                     on_step=False,
@@ -221,8 +226,6 @@ class FairVITrainingPlan(TrainingPlan):
 
     def training_step(self, batch, batch_idx):
         """Training step for adversarial training."""
-        full_dataset = batch[0]
-        labelled_dataset = batch[1]
 
         if "kl_weight" in self.loss_kwargs:
             self.loss_kwargs.update({"kl_weight": self.kl_weight})
@@ -239,20 +242,21 @@ class FairVITrainingPlan(TrainingPlan):
         else:
             opt1, opt2 = opts
 
-        input_kwargs = {
-            "labelled_tensors": labelled_dataset,
-        }
+        input_kwargs = {}
         input_kwargs.update(self.loss_kwargs)
 
         inference_outputs, _, losses = self.forward(
-            full_dataset, loss_kwargs=input_kwargs
+            batch, loss_kwargs=input_kwargs
         )
         z_shared = inference_outputs["z_shared"]
         zs = inference_outputs["zs"]
 
-        if self.current_epoch % self.adv_period == 0 or (TRAIN_MODE.ADVERSARIAL not in self.mode):
+        if self.current_epoch % self.adv_period <= ((self.adv_period - 1) // 2) or \
+                (TRAIN_MODE.ADVERSARIAL not in self.mode):
 
+            # train normally
             loss = losses[LOSS_KEYS.LOSS]
+
             # fool classifier if doing adversarial training
             if (TRAIN_MODE.ADVERSARIAL in self.mode) and kappa > 0 and (self.adversarial_classifier is not False):
                 fool_loss = self.loss_adversarial_classifier(z_shared, zs, False) * self.beta
@@ -266,7 +270,8 @@ class FairVITrainingPlan(TrainingPlan):
             self.manual_backward(loss)
             opt1.step()
 
-        if self.adv_period == 1 or (self.current_epoch % self.adv_period != 0 and (TRAIN_MODE.ADVERSARIAL in self.mode)):
+        if self.adv_period == 1 or (self.current_epoch % self.adv_period >= ((self.adv_period - 1) // 2)
+                                    and (TRAIN_MODE.ADVERSARIAL in self.mode)):
 
             # train adversarial classifier
             if (TRAIN_MODE.ADVERSARIAL in self.mode) and (opt2 is not None):
@@ -280,22 +285,18 @@ class FairVITrainingPlan(TrainingPlan):
                 opt2.step()
 
         results = {}
-        for key in LOSS_KEYS_LIST:
+        for key in losses:
             results.update({key: losses[key]})
         return results
 
     def validation_step(self, batch, batch_idx):
         """Validation step."""
-        full_dataset = batch[0]
-        labelled_dataset = batch[1]
 
-        input_kwargs = {
-            "labelled_tensors": labelled_dataset,
-        }
+        input_kwargs = {}
         input_kwargs.update(self.loss_kwargs)
 
         inf_outputs, gen_outputs, losses = self.forward(
-            full_dataset, loss_kwargs=input_kwargs
+            batch, loss_kwargs=input_kwargs
         )
 
         self.compute_and_log_metrics(losses, self.val_metrics, "validation")
@@ -307,7 +308,6 @@ class FairVITrainingPlan(TrainingPlan):
         adv_loss = self.loss_adversarial_classifier(z_shared, zs, True)
         self.log("adv_fool_loss_validation", fool_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log("adv_loss_validation", adv_loss, on_step=False, on_epoch=True, prog_bar=True)
-
 
         results = {}
         for key in losses:
