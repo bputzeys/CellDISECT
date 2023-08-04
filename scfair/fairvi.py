@@ -2,10 +2,11 @@ import logging
 from typing import List, Literal, Optional, Sequence, Tuple, Union
 
 import numpy as np
+import pandas as pd
 import torch
 from anndata import AnnData
 
-from scvi import REGISTRY_KEYS
+from scvi import REGISTRY_KEYS, settings
 from scvi.data import AnnDataManager
 from scvi.data.fields import (
     CategoricalJointObsField,
@@ -30,9 +31,10 @@ from .fairvae import fairVAE
 from .trainingplan import FairVITrainingPlan
 
 from .fairvi_datasplitter import FairVIDataSplitter
+from .fairvi_dataloader import FairVIDataLoader
 
 # for hyperparameter tuning
-from ray import tune
+# from ray import tune
 from scvi._decorators import classproperty
 from scvi.autotune._types import Tunable, TunableMixin
 
@@ -99,16 +101,20 @@ class FairVI(
         dropout_rate: float = 0.1,
         gene_likelihood: Literal["zinb", "nb", "poisson"] = "zinb",
         latent_distribution: Literal["normal", "ln"] = "normal",
+        encode_covariates: Tunable[bool] = True,
         alpha: Tunable[Union[List[float], Tuple[float], float]] = 1.0,  # coef for KL Zi
         beta: Tunable[float] = 1.0,   # coef for TC term
-        mode: Tuple[int] = (0,),
+        idx_cf_tensor_path: str = '',
         **model_kwargs,
     ):
         super().__init__(adata)
 
         self.alpha = alpha
         self.beta = beta
-        self.mode = mode
+
+        self.idx_cf_tensor_path = idx_cf_tensor_path
+
+        self._data_loader_cls = FairVIDataLoader
 
         n_cats_per_cov = (
             self.adata_manager.get_state_registry(
@@ -129,9 +135,9 @@ class FairVI(
             dropout_rate=dropout_rate,
             gene_likelihood=gene_likelihood,
             latent_distribution=latent_distribution,
+            encode_covariates=encode_covariates,
             alpha=alpha,
             beta=beta,
-            mode=mode,
             **model_kwargs,
         )
         self._model_summary_string = (
@@ -147,10 +153,6 @@ class FairVI(
             latent_distribution,
         )
         self.init_params_ = self._get_init_params(locals())
-
-    def set_mode(self, mode):
-        self.mode = mode
-        self.module.mode = mode
 
     @classmethod
     @setup_anndata_dsp.dedent
@@ -199,23 +201,20 @@ class FairVI(
         cls.register_manager(adata_manager)
 
     @torch.no_grad()
-    def predict(
+    def predict_given_covs(
         self,
-        adata: Optional[AnnData] = None,
-        adata_cf: Optional[AnnData] = None,
-        indices: Optional[Sequence[int]] = None,
-        batch_size: Optional[int] = None,   # must be as large as possible (default(None) = adata.n_obs)
-    ) -> AnnData:
+        adata: AnnData,  # anndata with fixed cov values
+        cov_name: str,
+        cov_idx: int,  # starting from 0
+        cov_value_cf,
+        batch_size: Optional[int] = None,
+    ) -> torch.Tensor:
         """
-        must have adata.X = adata_cf.X (same gene expression)
-        return AnnData with AnnData.covs = adata_cf.covs and predicted X
+        return mean of predicted X_cf with same covs in adata,
+        but has (cov[cov_idx] = cov_value_cf) instead of (cov[cov_idx] = cov_value)
 
         Parameters
         ----------
-        adata
-        adata_cf
-        indices
-        batch_size
 
         Returns
         -------
@@ -225,67 +224,28 @@ class FairVI(
 
         adata = self._validate_anndata(adata)
 
-        batch_size = adata.n_obs
+        adata_cf = adata.copy()
+        adata_cf.obs[cov_name] = pd.Categorical([cov_value_cf for _ in adata_cf.obs[cov_name]])
 
         scdl = self._make_data_loader(
-            adata=adata, indices=indices, batch_size=batch_size, shuffle=False
-        )
-        adata_cf = self._validate_anndata(adata_cf)
-        scdl_cf = self._make_data_loader(
-            adata=adata_cf, indices=indices, batch_size=batch_size, shuffle=False
+            adata=adata_cf, batch_size=batch_size
         )
 
-        cont_key = REGISTRY_KEYS.CONT_COVS_KEY
-        cat_key = REGISTRY_KEYS.CAT_COVS_KEY
+        px_cf_mean_list = []
 
-        zs, z_shared = [], []
-        cont_covs, cat_covs = [], []
-        inference_outputs = dict()
         for tensors in scdl:
-            inference_inputs = self.module._get_inference_input(tensors, for_train=False)
-            inference_outputs = self.module.inference(**inference_inputs, for_train=False)
-            zs += [inference_outputs["zs"]]
-            z_shared += [inference_outputs["z_shared"]]
+            inference_inputs = self.module._get_inference_input(tensors)
+            inference_outputs = self.module.inference(**inference_inputs)
 
-            cont_covs += [tensors[cont_key] if cont_key in tensors.keys() else None]
-            cat_covs += [tensors[cat_key] if cat_key in tensors.keys() else None]
+            generative_inputs = self.module._get_generative_input(tensors, inference_outputs)
+            generative_outputs = self.module.generative(**generative_inputs)
 
-        zs = list(torch.cat(x) for x in zip(*zs))
-        z_shared = torch.cat(z_shared)
-        cont_covs = torch.cat(cont_covs) if None not in cont_covs else None
-        cat_covs = torch.cat(cat_covs) if None not in cat_covs else None
+            px_cf_mean_list.append(generative_outputs["px"][cov_idx + 1].mean)
 
-        pred_adata = AnnData()
+        px_cf_mean_tensor = torch.cat(px_cf_mean_list, dim=0)
+        px_cf_pred = torch.mean(px_cf_mean_tensor, dim=0)
 
-        for tensors in scdl_cf:
-            # zs_cf
-            cont_covs_cf = tensors[cont_key] if cont_key in tensors.keys() else None
-            cat_covs_cf = tensors[cat_key] if cat_key in tensors.keys() else None
-            zs_cf = self.module.construct_zs_cf(zs, cont_covs, cat_covs, cont_covs_cf, cat_covs_cf)
-            # decode
-            generative_inputs = {
-                "z_shared": z_shared,
-                "z_shared_cf": z_shared,
-                "zs": zs_cf,
-                "zs_cf": zs_cf,
-                "library": inference_outputs["library"],
-                "library_cf": inference_outputs["library_cf"],
-                "library_s": inference_outputs["library_s"],
-                "cont_covs": cont_covs_cf,
-                "cont_covs_cf": cont_covs_cf,
-                "cat_covs": cat_covs_cf,
-                "cat_covs_cf": cat_covs_cf,
-                "indices": inference_outputs["indices"],
-                "indices_cf": inference_outputs["indices_cf"]
-            }
-            generative_outputs = self.module.generative(generative_inputs)
-            pred_x = generative_outputs["px"].mean
-            pred_adata = AnnData(X=pred_x)
-            pred_adata.layers["counts"] = pred_adata.X.copy()
-            pred_adata.obs = adata.obs
-            pred_adata.var_names = adata.var_names
-
-        return pred_adata
+        return px_cf_pred
 
     @torch.no_grad()
     def get_latent_representation(
@@ -294,7 +254,6 @@ class FairVI(
         indices: Optional[Sequence[int]] = None,
         batch_size: Optional[int] = None,
         nullify_cat_covs_indices: Optional[List[int]] = None,
-        nullify_cont_covs_indices: Optional[List[int]] = None,
         nullify_shared: Optional[bool] = False
     ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
         """
@@ -308,8 +267,6 @@ class FairVI(
             Batch size to use.
         nullify_cat_covs_indices
             Categorical attributes to nullify in the latent space.
-        nullify_cont_covs_indices
-            Continuous attributes to nullify in the latent space.
         nullify_shared
             nullify Z_shared
         """
@@ -321,17 +278,69 @@ class FairVI(
         )
         latent = []
         for tensors in scdl:
-            inference_inputs = self.module._get_inference_input(tensors, for_train=False)
+            inference_inputs = self.module._get_inference_input(tensors)
             outputs = self.module.inference(**inference_inputs,
                                             nullify_cat_covs_indices=nullify_cat_covs_indices,
-                                            nullify_cont_covs_indices=nullify_cont_covs_indices,
-                                            nullify_shared=nullify_shared,
-                                            for_train=False)
+                                            nullify_shared=nullify_shared)
 
             latent += [outputs["z_concat"].cpu()]
 
         return torch.cat(latent).numpy()
 
+    def _make_data_loader(
+            self,
+            adata: AnnData,
+            indices: Optional[Sequence[int]] = None,
+            batch_size: Optional[int] = None,
+            shuffle: bool = False,
+            data_loader_class=None,
+            **data_loader_kwargs,
+    ):
+        """Create a AnnDataLoader object for data iteration.
+
+        Parameters
+        ----------
+        adata
+            AnnData object with equivalent structure to initial AnnData.
+        indices
+            Indices of cells in adata to use. If `None`, all cells are used.
+        batch_size
+            Minibatch size for data loading into model. Defaults to `scvi.settings.batch_size`.
+        shuffle
+            Whether observations are shuffled each iteration though
+        data_loader_class
+            Class to use for data loader
+        data_loader_kwargs
+            Kwargs to the class-specific data loader class
+        """
+        adata_manager = self.get_anndata_manager(adata)
+        if adata_manager is None:
+            raise AssertionError(
+                "AnnDataManager not found. Call `self._validate_anndata` prior to calling this function."
+            )
+
+        adata_manager.idx_cf_tensor_path = self.idx_cf_tensor_path
+
+        adata = adata_manager.adata
+
+        if batch_size is None:
+            batch_size = settings.batch_size
+        if indices is None:
+            indices = np.arange(adata.n_obs)
+        if data_loader_class is None:
+            data_loader_class = self._data_loader_cls
+
+        if "num_workers" not in data_loader_kwargs:
+            data_loader_kwargs.update({"num_workers": settings.dl_num_workers})
+
+        dl = data_loader_class(
+            adata_manager,
+            shuffle=shuffle,
+            indices=indices,
+            batch_size=batch_size,
+            **data_loader_kwargs,
+        )
+        return dl
 
     # @devices_dsp.dedent
     def train(
@@ -340,11 +349,12 @@ class FairVI(
         use_gpu: Optional[Union[str, int, bool]] = None,
         train_size: float = 0.8,
         validation_size: Optional[float] = None,
-        batch_size: int = 512,
+        batch_size: int = 256,
         early_stopping: bool = True,
         plan_kwargs: Optional[dict] = None,
         adv_period: int = 1,
-        classification_ratio: int = 50,
+        classification_ratio: int = 200,
+        mode: Tuple[int] = (0,),
         **trainer_kwargs,
     ):
         """Train the model.
@@ -373,7 +383,10 @@ class FairVI(
             Other keyword args for :class:`~scvi.train.Trainer`.
         """
 
+        self.module.mode = mode
         self.module.set_require_grad()
+
+        self.adata_manager.idx_cf_tensor_path = self.idx_cf_tensor_path
 
         n_cells = self.adata.n_obs
         if max_epochs is None:
@@ -388,7 +401,7 @@ class FairVI(
             shuffle_set_split=True,
             batch_size=batch_size,
         )
-        training_plan = self._training_plan_cls(self.module, beta=self.beta, mode=self.mode,
+        training_plan = self._training_plan_cls(self.module, beta=self.beta, mode=mode,
                                                 adv_period=adv_period, classification_ratio=classification_ratio,
                                                 **plan_kwargs)
 
