@@ -13,9 +13,8 @@ from torch.distributions import kl_divergence as kl
 
 from scvi import REGISTRY_KEYS
 from scvi.autotune._types import Tunable
-from scvi.data._constants import ADATA_MINIFY_TYPE
 from scvi.distributions import NegativeBinomial, Poisson, ZeroInflatedNegativeBinomial
-from scvi.module.base import BaseMinifiedModeModuleClass, BaseModuleClass, LossOutput, auto_move_data
+from scvi.module.base import BaseModuleClass, LossOutput, auto_move_data
 from scvi.nn import DecoderSCVI, Decoder, Encoder, _base_components, one_hot, FCLayers
 
 from torchmetrics import Accuracy, F1Score
@@ -91,7 +90,6 @@ class fairVAE(BaseModuleClass):
             n_latent_shared: Tunable[int] = 10,
             n_latent_attribute: Tunable[int] = 10,
             n_layers: Tunable[int] = 1,
-            n_continuous_cov: int = 0,
             n_cats_per_cov: Optional[Iterable[int]] = None,
             dropout_rate: Tunable[float] = 0.1,
             log_variational: bool = True,
@@ -102,9 +100,6 @@ class fairVAE(BaseModuleClass):
             use_batch_norm: Tunable[Literal["encoder", "decoder", "none", "both"]] = "both",
             use_layer_norm: Tunable[Literal["encoder", "decoder", "none", "both"]] = "none",
             var_activation: Optional[Callable] = None,
-            alpha: Tunable[Union[List[float], Tuple[float], float]] = 1.0,  # coef for KL Zi
-            beta: Tunable[float] = 1.0,  # coef for TC term
-            mode: Tuple[int] = (0,),
     ):
         super().__init__()
         self.dispersion = "gene"
@@ -115,10 +110,6 @@ class fairVAE(BaseModuleClass):
         # Automatically deactivate if useless
         self.latent_distribution = latent_distribution
         self.encode_covariates = encode_covariates
-
-        self.alpha = alpha
-        self.beta = beta
-        self.mode = mode
 
         self.px_r = torch.nn.Parameter(torch.randn(n_input)).to(device)
 
@@ -239,12 +230,11 @@ class fairVAE(BaseModuleClass):
                 ).to(device)
             )
 
-    def set_require_grad(self):
-        if TRAIN_MODE.CLASSIFICATION not in self.mode:  # train all Z_i (encoders and decoders)
+    def set_require_grad(self, mode):
+        if TRAIN_MODE.CLASSIFICATION not in mode:
             for classifier in self.s_classifiers_list:
                 classifier.requires_grad = False
-
-        else:  # add classifiers P(Si | Zi) for all i
+        else:
             for classifier in self.s_classifiers_list:
                 classifier.requires_grad = True
 
@@ -427,48 +417,47 @@ class fairVAE(BaseModuleClass):
 
         return output_dict
 
-    def classification_loss(self, labelled_dataset):
-        x = labelled_dataset[REGISTRY_KEYS.X_KEY][0]
-
-        cat_key = REGISTRY_KEYS.CAT_COVS_KEY
-        cat_covs = labelled_dataset[cat_key][0] if cat_key in labelled_dataset.keys() else None
-
-        if cat_covs is not None:
-            cat_in = torch.split(cat_covs, 1, dim=1)
-        else:
-            cat_in = ()
-
-        encoders_inputs = [(x, *cat_in) for _ in cat_in] if self.encode_covariates \
-            else [(x,) for _ in self.z_encoders_list]
-
-        ce_loss = []
+    def classification_logits(self, inference_outputs):
+        zs = inference_outputs["zs"]
         logits = []
         for i in range(self.zs_num):
-            zs_i = self.z_encoders_list[i + 1](*encoders_inputs[i])[1].to(device)
-
             s_i_classifier = self.s_classifiers_list[i]
-            logits_i = s_i_classifier(zs_i)
+            logits_i = s_i_classifier(zs[i])
             logits += [logits_i]
 
-            s_i = one_hot_cat([self.n_cat_list[i]], cat_in[i]).to(device)
+        return logits
 
-            ce_loss += [
-                F.cross_entropy(
-                    logits_i,
-                    s_i
-                )
-            ]
+    def compute_clf_metrics(self, logits, cat_covs):
+        # CE, ACC, F1
+        cats = torch.split(cat_covs, 1, dim=1)
+        ce_losses = []
+        accuracy_scores = []
+        f1_scores = []
+        for i in range(self.zs_num):
+            s_i = one_hot_cat([self.n_cat_list[i]], cats[i]).to(device)
+            ce_losses += [F.cross_entropy(logits[i], s_i)]
+            kwargs = {"task": "multiclass", "num_classes": self.n_cat_list[i]}
+            predicted_labels = torch.argmax(logits[i], dim=-1, keepdim=True).to(device)
+            acc = Accuracy(**kwargs).to(device)
+            accuracy_scores.append(acc(predicted_labels, cats[i]).to(device))
+            F1 = F1Score(**kwargs).to(device)
+            f1_scores.append(F1(predicted_labels, cats[i]).to(device))
 
-        return ce_loss, cat_in, logits
+        ce_loss_sum = sum(torch.mean(ce) for ce in ce_losses)
+        accuracy = sum(accuracy_scores) / len(accuracy_scores)
+        f1 = sum(f1_scores) / len(f1_scores)
+
+        return ce_loss_sum, accuracy, f1
 
     def loss(
             self,
             tensors,
             inference_outputs,
             generative_outputs,
+            alpha: Tunable[Union[float, int]],  # KL Zi weight
+            clf_weight: Tunable[Union[float, int]],  # Si classifier weight
+            mode: Tuple[int],
             kl_weight: float = 1.0,
-            labelled_tensors=None,
-            classification_ratio=None,
     ):
 
         x = tensors[REGISTRY_KEYS.X_KEY]
@@ -490,35 +479,21 @@ class fairVAE(BaseModuleClass):
 
         kl_z_dict = {'z_' + str(i+1): kl_z_list[i] for i in range(len(kl_z_list))}
 
-        # Cross Entropy
+        # classification metrics: CE, ACC, F1
 
-        ce_losses, true_labels, logits = self.classification_loss(tensors)
-        ce_loss = sum(torch.mean(ce_losses[i]) for i in range(self.zs_num))
-        ce_loss_mean = ce_loss / len(range(self.zs_num))
-
-        # compute other metrics (accuracy, F1) and log
-
-        accuracy_scores = []
-        f1_scores = []
-        for i in range(self.zs_num):
-            kwargs = {"task": "multiclass", "num_classes": self.n_cat_list[i]}
-            predicted_labels = torch.argmax(logits[i], dim=-1, keepdim=True).to(device)
-            acc = Accuracy(**kwargs).to(device)
-            accuracy_scores.append(acc(predicted_labels, true_labels[i]).to(device))
-            F1 = F1Score(**kwargs).to(device)
-            f1_scores.append(F1(predicted_labels, true_labels[i]).to(device))
-
-        accuracy = sum(accuracy_scores) / len(accuracy_scores)
-        f1 = sum(f1_scores) / len(f1_scores)
+        cat_covs = inference_outputs["cat_covs"]
+        logits = self.classification_logits(inference_outputs)
+        ce_loss_sum, accuracy, f1 = self.compute_clf_metrics(logits, cat_covs)
+        ce_loss_mean = ce_loss_sum / len(range(self.zs_num))
 
         # total loss
         loss = reconst_loss_x
-        if TRAIN_MODE.RECONST_CF in self.mode:
+        if TRAIN_MODE.RECONST_CF in mode:
             loss += reconst_loss_x_cf
-        if TRAIN_MODE.KL_Z in self.mode:
-            loss += sum(kl_z_list) * kl_weight * self.alpha
-        if TRAIN_MODE.CLASSIFICATION in self.mode:
-            loss += ce_loss * classification_ratio
+        if TRAIN_MODE.KL_Z in mode:
+            loss += sum(kl_z_list) * kl_weight * alpha
+        if TRAIN_MODE.CLASSIFICATION in mode:
+            loss += ce_loss_sum * clf_weight
 
         loss_dict = {
             LOSS_KEYS.LOSS: loss,
