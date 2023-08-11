@@ -1,25 +1,35 @@
 from typing import Dict, List, Tuple
-from sklearn.feature_selection import *
-
-from sklearn.base import clone
-from sklearn.datasets import load_breast_cancer
-from sklearn.model_selection import StratifiedKFold, cross_validate
-
-import xgboost as xgb
-
-from scipy.stats import entropy
-
-from fairlearn.metrics import *
 
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
+from scipy.stats import entropy
+import scipy.spatial as ss
+from scipy.special import digamma
+from math import log
+
+from sklearn.feature_selection import *
+from sklearn.base import clone
+from sklearn.model_selection import StratifiedKFold
+
+import xgboost as xgb
+
+from fairlearn.metrics import *
+
+# R for MI
+import rpy2
+import rpy2.robjects as ro
+from rpy2.robjects.packages import importr
+from rpy2.robjects import pandas2ri
+
+infotheo = importr('infotheo')
+mpmi = importr('mpmi')
+
 
 def barplot_metric(metric_name: str,
-                    method2metrics: Dict[str, List],
-                    attr_names: List[str]):
-
+                   method2metrics: Dict[str, List],
+                   attr_names: List[str]):
     bar_width = 0.2
     figsize = (len(attr_names) * 3, 5)
 
@@ -70,9 +80,9 @@ def clf_S_Z_metrics(adata, cats):
 
     acc_results = []
 
-    for i in range(1, len(cats) + 1):
+    print(f'metrics for XGBoost classifier Si | Zi')
 
-        print(f'metrics for XGBoost classifier S{i} | Z{i}')
+    for i in range(1, len(cats) + 1):
 
         Zi = adata.obsm[f"Z_{i}"]
         Si = adata.obs[cats[i - 1] + '_idx']
@@ -101,7 +111,7 @@ def clf_S_Z_metrics(adata, cats):
 
         acc_results.append((train_score_i, test_score_i))
 
-        print(f'train acc: {train_score_i:.4f},  test acc: {test_score_i:.4f}')
+        print(f'train acc S{i}: {train_score_i:.4f},  test acc S{i}: {test_score_i:.4f}')
 
     return acc_results
 
@@ -115,9 +125,9 @@ def clf_S_Z_not_metrics(adata, cats):
 
     acc_results = []
 
-    for i in range(1, len(cats) + 1):
+    print(f'metrics for XGBoost classifier Si | (Z - Zi)')
 
-        print(f'metrics for XGBoost classifier S{i} | (Z - Z{i})')
+    for i in range(1, len(cats) + 1):
 
         Z_not_i = adata.obsm[f"Z_not_{i}"]
         Si = adata.obs[cats[i - 1] + '_idx']
@@ -146,7 +156,7 @@ def clf_S_Z_not_metrics(adata, cats):
 
         acc_results.append((train_score_i, test_score_i))
 
-        print(f'train acc: {train_score_i:.4f},  test acc: {test_score_i:.4f}')
+        print(f'train acc S{i}: {train_score_i:.4f},  test acc S{i}: {test_score_i:.4f}')
 
     return acc_results
 
@@ -170,9 +180,9 @@ def fair_clf_metrics(adata, cats, y_name):
 
     ACC = []
 
-    for i in range(1, len(cats) + 1):
+    print(f'fairness metrics wrt Si for XGBoost classifier {y_bin_name} | (Z - Zi)')
 
-        print(f'fairness metrics wrt S{i} for XGBoost classifier {y_bin_name} | (Z - Z{i})')
+    for i in range(1, len(cats) + 1):
 
         Z_not_i = adata.obsm[f"Z_not_{i}"]
         Si = adata.obs[cats[i - 1] + '_idx']
@@ -214,17 +224,16 @@ def fair_clf_metrics(adata, cats, y_name):
         test_acc = np.mean(ACC_i)
         ACC.append(test_acc)
 
-        print(f'accuracy = {test_acc:.4f}')
-        print(f'DP_diff = {dp_diff:.4f}, EO_diff = {eo_diff:.4f}')
+        print(f'i={i}: accuracy = {test_acc:.4f}, DP_diff = {dp_diff:.4f}, EO_diff = {eo_diff:.4f}')
 
     return ACC, DP_diff, EO_diff
 
 
-def MI_metrics(adata, cats):
-    # Mutual Information
+def max_dim_MI_metrics(adata, cats):
+    # Max Mutual Information by taking Max over Dims
     # https://scikit-learn.org/stable/modules/generated/sklearn.feature_selection.mutual_info_classif.html
 
-    print('Mutual Information metrics')
+    print('Max_Dim Mutual Information metrics')
 
     MI_dif = []
     H = []
@@ -264,3 +273,242 @@ def MI_metrics(adata, cats):
     print(f"MIG = {mig:.4f}")
 
     return MI, MI_not, mig
+
+
+def disc_MI_metrics(adata, cats):
+    # Mutual Information by discretizing Z
+    # R package infotheo
+
+    print('Z_Discretized Mutual Information metrics')
+
+    Z = []
+    Z_not = []
+    S = []
+
+    for i in range(1, len(cats) + 1):
+        Zi_df = pd.DataFrame(adata.obsm[f"Z_{i}"])
+        Z_not_i_df = pd.DataFrame(adata.obsm[f"Z_not_{i}"])
+        Si_df = pd.DataFrame(adata.obs[cats[i - 1] + '_idx'])
+
+        with (ro.default_converter + pandas2ri.converter).context():
+            Zi_dis = ro.conversion.get_conversion().py2rpy(Zi_df)
+            Z_not_i_dis = ro.conversion.get_conversion().py2rpy(Z_not_i_df)
+            Si_dis = ro.conversion.get_conversion().py2rpy(Si_df)
+
+        Z.append(infotheo.discretize(Zi_dis))
+        Z_not.append(infotheo.discretize(Z_not_i_dis))
+        S.append(Si_dis)
+
+    MI = []
+    MI_not = []
+    MI_not_max = []
+
+    MI_dif = []
+    MI_dif_max = []
+    H = []
+
+    for i in range(1, len(cats) + 1):
+        # MI
+
+        Si = S[i-1]
+
+        mi = infotheo.mutinformation(Z[i - 1], Si)[0]
+        mi_not = infotheo.mutinformation(Z_not[i - 1], Si)[0]
+        mi_not_max = max(infotheo.mutinformation(Z[j], Si)[0] for j in range(len(Z)) if j != i - 1)
+
+        MI.append(mi)
+        MI_not.append(mi_not)
+        MI_not_max.append(mi_not_max)
+
+        MI_dif.append(mi - mi_not)
+        MI_dif_max.append(mi - mi_not_max)
+
+        print(f"MI(Z_{i} ; S_{i}) = {mi:.4f},  "
+              f"MI((Z - Z_{i}) ; S_{i}) = {mi_not:.4f}, "
+              f"max MI((Z_j!={i}) ; S_{i}) = {mi_not_max:.4f}")
+
+        # entropy
+
+        value, counts = np.unique(Si, return_counts=True)
+        H.append(entropy(counts))
+
+    # MIG, MIPG
+
+    mig = np.mean([MI_dif_max[i] / H[i] for i in range(len(cats))])
+    mipg = np.mean([MI_dif[i] / H[i] for i in range(len(cats))])
+
+    print(f"MIG = {mig:.4f}, MIPG = {mipg:.4f}")
+
+    return MI, MI_not, MI_not_max, mig, mipg
+
+
+def MP_MI_metrics(adata, cats):
+    # Mixed-Pair Mutual Information Estimator
+    # R package mpmi
+
+    print('Mixed-Pair Mutual Information metrics')
+
+    Z = []
+    Z_not = []
+    S = []
+
+    for i in range(1, len(cats) + 1):
+        Zi_df = pd.DataFrame(adata.obsm[f"Z_{i}"])
+        Z_not_i_df = pd.DataFrame(adata.obsm[f"Z_not_{i}"])
+        Si_df = pd.DataFrame(adata.obs[cats[i - 1] + '_idx'])
+
+        with (ro.default_converter + pandas2ri.converter).context():
+            Zi_r = ro.conversion.get_conversion().py2rpy(Zi_df)
+            Z_not_i_r = ro.conversion.get_conversion().py2rpy(Z_not_i_df)
+            Si_r = ro.conversion.get_conversion().py2rpy(Si_df)
+
+        Z.append(Zi_r)
+        Z_not.append(Z_not_i_r)
+        S.append(Si_r)
+
+    MI = []
+    MI_not = []
+    MI_not_max = []
+
+    MI_dif = []
+    MI_dif_max = []
+    H = []
+
+    for i in range(1, len(cats) + 1):
+        # MI
+
+        Si = S[i-1]
+
+        mi = mpmi.mmi(Z[i - 1], Si)
+        mi_not = infotheo.mutinformation(Z_not[i - 1], Si)[0]
+        mi_not_max = max(infotheo.mutinformation(Z[j], Si)[0] for j in range(len(Z)) if j != i - 1)
+
+        # mi = infotheo.mutinformation(Z[i - 1], Si)[0]
+        # mi_not = infotheo.mutinformation(Z_not[i - 1], Si)[0]
+        # mi_not_max = max(infotheo.mutinformation(Z[j], Si)[0] for j in range(len(Z)) if j != i - 1)
+
+        MI.append(mi)
+        MI_not.append(mi_not)
+        MI_not_max.append(mi_not_max)
+
+        MI_dif.append(mi - mi_not)
+        MI_dif_max.append(mi - mi_not_max)
+
+        print(f"MI(Z_{i} ; S_{i}) = {mi:.4f},  "
+              f"MI((Z - Z_{i}) ; S_{i}) = {mi_not:.4f}, "
+              f"max MI((Z_j!={i}) ; S_{i}) = {mi_not_max:.4f}")
+
+        # entropy
+
+        value, counts = np.unique(Si, return_counts=True)
+        H.append(entropy(counts))
+
+    # MIG, MIPG
+
+    mig = np.mean([MI_dif_max[i] / H[i] for i in range(len(cats))])
+    mipg = np.mean([MI_dif[i] / H[i] for i in range(len(cats))])
+
+    print(f"MIG = {mig:.4f}, MIPG = {mipg:.4f}")
+
+    return MI, MI_not, MI_not_max, mig, mipg
+
+
+def Mixed_KSG_MI_metrics(adata, cats):
+    # Mutual Information by Mixed_KSG
+    # code from: https://github.com/wgao9/mixed_KSG/blob/master/mixed.py
+
+    print('Mixed_KSG Mutual Information metrics')
+
+    Z = []
+    Z_not = []
+    S = []
+
+    for i in range(1, len(cats) + 1):
+        Z.append(adata.obsm[f"Z_{i}"])
+        Z_not.append(adata.obsm[f"Z_not_{i}"])
+        S.append(adata.obs[cats[i - 1] + '_idx'])
+
+    MI = []
+    MI_not = []
+    MI_not_max = []
+
+    MI_dif = []
+    MI_dif_max = []
+    H = []
+
+    for i in range(1, len(cats) + 1):
+        # MI
+
+        Si = S[i-1]
+
+        mi = Mixed_KSG_MI(Z[i-1], Si)
+        mi_not = Mixed_KSG_MI(Z_not[i-1], Si)
+        mi_not_max = max(Mixed_KSG_MI(Z[j], Si) for j in range(len(Z)) if j != i - 1)
+
+        MI.append(mi)
+        MI_not.append(mi_not)
+        MI_not_max.append(mi_not_max)
+
+        MI_dif.append(mi - mi_not)
+        MI_dif_max.append(mi - mi_not_max)
+
+        print(f"MI(Z_{i} ; S_{i}) = {mi:.4f},  "
+              f"MI((Z - Z_{i}) ; S_{i}) = {mi_not:.4f}, "
+              f"max MI((Z_j!={i}) ; S_{i}) = {mi_not_max:.4f}")
+
+        # entropy
+
+        value, counts = np.unique(Si, return_counts=True)
+        H.append(entropy(counts))
+
+    # MIG, MIPG
+
+    mig = np.mean([MI_dif_max[i] / H[i] for i in range(len(cats))])
+    mipg = np.mean([MI_dif[i] / H[i] for i in range(len(cats))])
+
+    print(f"MIG = {mig:.4f}, MIPG = {mipg:.4f}")
+
+    return MI, MI_not, MI_not_max, mig, mipg
+
+
+def Mixed_KSG_MI(x, y, k=5):
+    """
+        Estimate the mutual information I(X;Y) of X and Y from samples {x_i, y_i}_{i=1}^N
+        Using *Mixed-KSG* mutual information estimator
+
+        Input: x: 2D array of size N*d_x (or 1D list of size N if d_x = 1)
+        y: 2D array of size N*d_y (or 1D list of size N if d_y = 1)
+        k: k-nearest neighbor parameter
+
+        Output: one number of I(X;Y)
+    """
+    x = np.array(x)
+    y = np.array(y)
+
+    assert len(x) == len(y), "Lists should have same length"
+    assert k <= len(x) - 1, "Set k smaller than num. samples - 1"
+    N = len(x)
+    if x.ndim == 1:
+        x = x.reshape((N, 1))
+    if y.ndim == 1:
+        y = y.reshape((N, 1))
+    data = np.concatenate((x, y), axis=1)
+
+    tree_xy = ss.cKDTree(data)
+    tree_x = ss.cKDTree(x)
+    tree_y = ss.cKDTree(y)
+
+    knn_dis = [tree_xy.query(point, k + 1, p=float('inf'))[0][k] for point in data]
+    ans = 0
+
+    for i in range(N):
+        kp, nx, ny = k, k, k
+        if knn_dis[i] == 0:
+            kp = len(tree_xy.query_ball_point(data[i], 1e-15, p=float('inf')))
+            nx = len(tree_x.query_ball_point(x[i], 1e-15, p=float('inf')))
+            ny = len(tree_y.query_ball_point(y[i], 1e-15, p=float('inf')))
+        else:
+            nx = len(tree_x.query_ball_point(x[i], knn_dis[i] - 1e-15, p=float('inf')))
+            ny = len(tree_y.query_ball_point(y[i], knn_dis[i] - 1e-15, p=float('inf')))
+        ans += (digamma(kp) + log(N) - digamma(nx) - digamma(ny)) / N
+    return ans
