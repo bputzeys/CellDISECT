@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Tuple
 import numpy as np
 import torch
 from sklearn.metrics import r2_score
@@ -8,13 +8,16 @@ import itertools
 
 from .fairvi import FairVI
 
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-def latent_umap(
+
+def latent(
         adata: AnnData,
         cats: List[str],
         new_model_name='',
         pre_path: str = '.',
         idx_cf_tensor_path: str = '',
+        plot_umap: bool = True,
         **train_dict,
 ):
     try:
@@ -51,25 +54,27 @@ def latent_umap(
 
     print(f"---latent computation completed---")
 
-    print("---UMAP computation started---")
+    if plot_umap:
 
-    for i in range(len(cats) + 1):  # loop over Z_shared and all Z_i
+        print("---UMAP computation started---")
 
-        latent_name = f'Z_{i}'
+        for i in range(len(cats) + 1):  # loop over Z_shared and all Z_i
 
-        print(f"---UMAP for {latent_name}---")
+            latent_name = f'Z_{i}'
 
-        sc.pp.neighbors(adata, use_rep=f"{latent_name}")
-        sc.tl.umap(adata)
+            print(f"---UMAP for {latent_name}---")
 
-        sc.pl.umap(
-            adata,
-            color=cats,
-            ncols=len(cats),
-            frameon=False,
-        )
+            sc.pp.neighbors(adata, use_rep=f"{latent_name}")
+            sc.tl.umap(adata)
 
-    print("---UMAP computation completed---")
+            sc.pl.umap(
+                adata,
+                color=cats,
+                ncols=len(cats),
+                frameon=False,
+            )
+
+        print("---UMAP computation completed---")
 
     return adata
 
@@ -184,3 +189,93 @@ def ood(
     print(f'Average R2 = {avg_r2:.4f}')
 
     return true_x_counts_mean_dict, px_cf_mean_pred_dict, r2_scores_dict
+
+
+def ood_for_given_covs(
+        adata: AnnData,
+        cats: List[str],
+        new_model_name='',
+        pre_path: str = '.',
+        idx_cf_tensor_path: str = '',
+        cov_idx: int = 0,
+        cov_value_idx: int = 1,
+        cov_value_cf_idx: int = 0,
+        other_covs_values: Tuple = (0,),
+        **train_dict,
+):
+
+    cov_name = cats[cov_idx]
+    cov_value = tuple(set(adata.obs[cats[cov_idx]]))[cov_value_idx]
+    cov_value_cf = tuple(set(adata.obs[cats[cov_idx]]))[cov_value_cf_idx]
+
+    other_cats = [c for c in cats if c != cov_name]
+
+    train_sub_idx = []
+    true_idx = []
+    source_sub_idx = []
+    cell_to_idx = torch.tensor(list(range(adata.n_obs))).to(device)
+    cell_to_source_sub_idx = torch.tensor(list(range(adata.n_obs))).to(device)
+    for i in range(adata.n_obs):
+        cov_value_i = adata[i].obs[cats[cov_idx]][0]
+
+        if all(adata[i].obs[c][0] == other_covs_values[k] for k, c in enumerate(other_cats)):
+            if cov_value_i == cov_value_cf:
+                true_idx.append(i)
+            else:
+                train_sub_idx.append(i)
+                if cov_value_i == cov_value:
+                    source_sub_idx.append(i)
+        else:
+            train_sub_idx.append(i)
+
+        cell_to_idx[i] = len(train_sub_idx) - 1
+        cell_to_source_sub_idx[i] = len(source_sub_idx) - 1
+
+    idx_to_cell = torch.tensor(train_sub_idx).to(device)
+
+    adata_sub = adata[train_sub_idx]
+
+    cov_str_cf = cats[cov_idx] + ' = ' + str(cov_value) + ' to ' + str(cov_value_cf)
+    other_covs_str = ', '.join(c + ' = ' + str(other_covs_values[k]) for k, c in enumerate(other_cats))
+
+    app_str = f' cf ' + cov_str_cf + ', ' + other_covs_str
+    sub_model_name = new_model_name + app_str
+
+    try:
+        model = FairVI.load(f"{pre_path}/{sub_model_name}", adata=adata_sub)
+
+    except:
+        adata_sub = adata_sub.copy()
+        FairVI.setup_anndata(
+            adata_sub,
+            layer='counts',
+            categorical_covariate_keys=cats,
+            continuous_covariate_keys=[]
+        )
+        model = FairVI(adata_sub, idx_cf_tensor_path=idx_cf_tensor_path,
+                       cell_to_idx=cell_to_idx, idx_to_cell=idx_to_cell)
+        model.train(**train_dict)
+        try:
+            model.save(f"{pre_path}/{sub_model_name}")
+        except:
+            pass
+
+    source_adata = adata[source_sub_idx]
+
+    model.idx_cf_tensor_path = idx_cf_tensor_path
+    model.cell_to_idx = cell_to_source_sub_idx
+    model.idx_to_cell = torch.tensor(source_sub_idx).to(device)
+
+    px_cf_mean_pred = model.predict_given_covs(adata=source_adata, cats=cats, cov_idx=cov_idx,
+                                               cov_value_cf=cov_value_cf)
+
+    true_x_count = torch.tensor(adata.layers["counts"][true_idx].toarray()).to(device)
+    true_x_counts_mean = torch.mean(true_x_count, dim=0).to(device)
+
+    r2 = r2_score(true_x_counts_mean.to('cpu'), px_cf_mean_pred.to('cpu'))
+
+    print(f'Counterfactual prediction for {cov_str_cf} and {other_covs_str}')
+
+    print(f'R2 = {r2:.4f}')
+
+    return true_x_counts_mean, px_cf_mean_pred, r2
