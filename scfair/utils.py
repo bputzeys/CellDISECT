@@ -1,4 +1,4 @@
-from typing import Any, Dict, List
+from typing import List
 import torch
 from scvi.nn import one_hot
 
@@ -11,6 +11,13 @@ class TRAIN_MODE(int, Enum):
     KL_Z = 2
     CLASSIFICATION = 3
     ADVERSARIAL = 4
+
+
+class CF_MODE(int, Enum):
+    NO_SEMI_AE = 0
+    SEMI_AE_DETACH_DEC_ENC = 1
+    SEMI_AE_DETACH_DEC = 2
+    SEMI_AE_NO_DETACH = 3
 
 
 class LOSS_KEYS(str, Enum):
