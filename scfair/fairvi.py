@@ -33,6 +33,8 @@ from .trainingplan import FairVITrainingPlan
 from .fairvi_datasplitter import FairVIDataSplitter
 from .fairvi_dataloader import FairVIDataLoader
 
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
 # for hyperparameter tuning
 # from ray import tune
 from scvi._decorators import classproperty
@@ -101,18 +103,21 @@ class FairVI(
         dropout_rate: float = 0.1,
         gene_likelihood: Literal["zinb", "nb", "poisson"] = "zinb",
         latent_distribution: Literal["normal", "ln"] = "normal",
-        encode_covariates: Tunable[bool] = True,
-        alpha: Tunable[Union[List[float], Tuple[float], float]] = 1.0,  # coef for KL Zi
-        beta: Tunable[float] = 1.0,   # coef for TC term
         idx_cf_tensor_path: str = '',
+        cell_to_idx: torch.Tensor = None,
+        idx_to_cell: torch.Tensor = None,
         **model_kwargs,
     ):
         super().__init__(adata)
 
-        self.alpha = alpha
-        self.beta = beta
-
         self.idx_cf_tensor_path = idx_cf_tensor_path
+
+        if cell_to_idx is None:
+            cell_to_idx = torch.tensor(list(range(adata.n_obs))).to(device)
+        self.cell_to_idx = cell_to_idx
+        if idx_to_cell is None:
+            idx_to_cell = torch.tensor(list(range(adata.n_obs))).to(device)
+        self.idx_to_cell = idx_to_cell
 
         self._data_loader_cls = FairVIDataLoader
 
@@ -126,7 +131,6 @@ class FairVI(
 
         self.module = self._module_cls(
             n_input=self.summary_stats.n_vars,
-            n_continuous_cov=self.summary_stats.get("n_extra_continuous_covs", 0),
             n_cats_per_cov=n_cats_per_cov,
             n_hidden=n_hidden,
             n_latent_shared=n_latent_shared,
@@ -135,9 +139,6 @@ class FairVI(
             dropout_rate=dropout_rate,
             gene_likelihood=gene_likelihood,
             latent_distribution=latent_distribution,
-            encode_covariates=encode_covariates,
-            alpha=alpha,
-            beta=beta,
             **model_kwargs,
         )
         self._model_summary_string = (
@@ -200,32 +201,32 @@ class FairVI(
         adata_manager.register_fields(adata, **kwargs)
         cls.register_manager(adata_manager)
 
+    # call this method after training the model with this held-out:
+    # covs[cov_idx] = cov_value_cf, covs[others_idx] = adata.obs[others_idx]
     @torch.no_grad()
     def predict_given_covs(
         self,
-        adata: AnnData,  # anndata with fixed cov values
-        cov_name: str,
-        cov_idx: int,  # starting from 0
+        adata: AnnData,  # source anndata with fixed cov values
+        cats: List[str],
+        cov_idx: int,  # index in cats starting from 0
         cov_value_cf,
         batch_size: Optional[int] = None,
     ) -> torch.Tensor:
-        """
-        return mean of predicted X_cf with same covs in adata,
-        but has (cov[cov_idx] = cov_value_cf) instead of (cov[cov_idx] = cov_value)
 
-        Parameters
-        ----------
-
-        Returns
-        -------
-
-        """
         self._check_if_trained(warn=False)
 
-        adata = self._validate_anndata(adata)
-
         adata_cf = adata.copy()
+        cov_name = cats[cov_idx]
         adata_cf.obs[cov_name] = pd.Categorical([cov_value_cf for _ in adata_cf.obs[cov_name]])
+
+        FairVI.setup_anndata(
+            adata_cf,
+            layer='counts',
+            categorical_covariate_keys=cats,
+            continuous_covariate_keys=[]
+        )
+
+        adata_cf = self._validate_anndata(adata_cf)
 
         scdl = self._make_data_loader(
             adata=adata_cf, batch_size=batch_size
@@ -234,18 +235,16 @@ class FairVI(
         px_cf_mean_list = []
 
         for tensors in scdl:
-            inference_inputs = self.module._get_inference_input(tensors)
-            inference_outputs = self.module.inference(**inference_inputs)
 
-            generative_inputs = self.module._get_generative_input(tensors, inference_outputs)
-            generative_outputs = self.module.generative(**generative_inputs)
+            px_cf = self.module.sub_forward(idx=cov_idx+1, x=tensors[REGISTRY_KEYS.X_KEY][0].to(device),
+                                            cat_covs=tensors[REGISTRY_KEYS.CAT_COVS_KEY][0].to(device))
 
-            px_cf_mean_list.append(generative_outputs["px"][cov_idx + 1].mean)
+            px_cf_mean_list.append(px_cf.mean)
 
         px_cf_mean_tensor = torch.cat(px_cf_mean_list, dim=0)
-        px_cf_pred = torch.mean(px_cf_mean_tensor, dim=0)
+        px_cf_mean_pred = torch.mean(px_cf_mean_tensor, dim=0)
 
-        return px_cf_pred
+        return px_cf_mean_pred
 
     @torch.no_grad()
     def get_latent_representation(
@@ -320,6 +319,8 @@ class FairVI(
             )
 
         adata_manager.idx_cf_tensor_path = self.idx_cf_tensor_path
+        adata_manager.cell_to_idx = self.cell_to_idx
+        adata_manager.idx_to_cell = self.idx_to_cell
 
         adata = adata_manager.adata
 
@@ -346,15 +347,19 @@ class FairVI(
     def train(
         self,
         max_epochs: Optional[int] = None,
-        use_gpu: Optional[Union[str, int, bool]] = None,
+        use_gpu: Optional[Union[str, int, bool]] = True,
         train_size: float = 0.8,
         validation_size: Optional[float] = None,
         batch_size: int = 256,
         early_stopping: bool = True,
         plan_kwargs: Optional[dict] = None,
-        adv_period: int = 1,
-        classification_ratio: int = 200,
-        mode: Tuple[int] = (0,),
+        cf_weight: Tunable[Union[float, int]] = 1,  # RECONST_LOSS_X_CF weight
+        alpha: Tunable[Union[float, int]] = 1,  # KL Zi weight
+        clf_weight: Tunable[Union[float, int]] = 50,  # Si classifier weight
+        adv_clf_weight: Tunable[Union[float, int]] = 10,  # adversarial classifier weight
+        adv_period: Tunable[int] = 1,  # adversarial training period
+        mode: Tunable[Tuple[int]] = (0,),  # training mode
+        cf_mode: Tunable[int] = 0,  # counterfactual mode (semi auto-encoding + detach options)
         **trainer_kwargs,
     ):
         """Train the model.
@@ -379,14 +384,29 @@ class FairVI(
         plan_kwargs
             Keyword args for :class:`~scvi.train.TrainingPlan`. Keyword arguments passed to
             `train()` will overwrite values present in `plan_kwargs`, when appropriate.
+        cf_weight
+            RECONST_LOSS_X_CF weight
+        alpha
+            KL Zi weight
+        clf_weight
+            Si classifier weight
+        adv_clf_weight
+            adversarial classifier weight
+        adv_period
+            adversarial training period
+        mode
+            training mode
+        cf_mode
+            counterfactual mode (semi auto-encoding + detach options)
         **trainer_kwargs
             Other keyword args for :class:`~scvi.train.Trainer`.
         """
 
-        self.module.mode = mode
-        self.module.set_require_grad()
+        self.module.set_require_grad(mode)
 
         self.adata_manager.idx_cf_tensor_path = self.idx_cf_tensor_path
+        self.adata_manager.cell_to_idx = self.cell_to_idx
+        self.adata_manager.idx_to_cell = self.idx_to_cell
 
         n_cells = self.adata.n_obs
         if max_epochs is None:
@@ -401,8 +421,14 @@ class FairVI(
             shuffle_set_split=True,
             batch_size=batch_size,
         )
-        training_plan = self._training_plan_cls(self.module, beta=self.beta, mode=mode,
-                                                adv_period=adv_period, classification_ratio=classification_ratio,
+        training_plan = self._training_plan_cls(self.module,
+                                                cf_weight=cf_weight,
+                                                alpha=alpha,
+                                                clf_weight=clf_weight,
+                                                adv_clf_weight=adv_clf_weight,
+                                                adv_period=adv_period,
+                                                mode=mode,
+                                                cf_mode=cf_mode,
                                                 **plan_kwargs)
 
         es = "early_stopping"
