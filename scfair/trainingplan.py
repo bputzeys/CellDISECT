@@ -4,7 +4,10 @@ from typing import Callable, Dict, Iterable, Literal, Optional, Union, List, Tup
 
 import optax
 import torch
+from torch import nn
 from torch.optim.lr_scheduler import ReduceLROnPlateau
+import torch.nn.functional as F
+from torchmetrics import Accuracy, F1Score
 
 from scvi.module import Classifier
 from scvi.module.base import BaseModuleClass, LossOutput
@@ -64,8 +67,6 @@ class FairVITrainingPlan(TrainingPlan):
         Which metric to track for learning rate reduction.
     lr_min
         Minimum learning rate allowed
-    adversarial_classifier
-        Whether to use adversarial classifier in the latent space
     scale_adversarial_loss
         Scaling factor on the adversarial components of the loss.
         By default, adversarial loss is scaled from 1 to 0 following opposite of
@@ -78,25 +79,26 @@ class FairVITrainingPlan(TrainingPlan):
     def __init__(
         self,
         module: BaseModuleClass,
-        *,
+        cf_weight: Tunable[Union[float, int]],
+        alpha: Tunable[Union[float, int]],
+        clf_weight: Tunable[Union[float, int]],
+        adv_clf_weight: Tunable[Union[float, int]],
+        adv_period: Tunable[int],
+        mode: Tunable[Tuple[int]],
+        cf_mode: Tunable[int],
         optimizer: Tunable[Literal["Adam", "AdamW", "Custom"]] = "Adam",
         optimizer_creator: Optional[TorchOptimizerCreator] = None,
-        classification_ratio: int = 200,
         lr: Tunable[float] = 1e-3,
-        weight_decay: Tunable[float] = 1e-5,
+        weight_decay: Tunable[float] = 1e-6,
         n_steps_kl_warmup: Tunable[int] = None,
         n_epochs_kl_warmup: Tunable[int] = 400,
         reduce_lr_on_plateau: Tunable[bool] = True,
-        lr_factor: Tunable[float] = 0.4,
-        lr_patience: Tunable[int] = 20,
+        lr_factor: Tunable[float] = 0.6,
+        lr_patience: Tunable[int] = 30,
         lr_threshold: Tunable[float] = 0.0,
         lr_scheduler_metric: Literal["loss_validation"] = "loss_validation",
         lr_min: float = 0,
-        adversarial_classifier: Union[bool, Classifier] = True,
         scale_adversarial_loss: Union[float, Literal["auto"]] = "auto",
-        beta: Tunable[float] = 1.0,  # coef for TC term
-        mode: Tuple[int] = (0,),
-        adv_period: int = 1,
         **loss_kwargs,
     ):
         super().__init__(
@@ -115,27 +117,43 @@ class FairVITrainingPlan(TrainingPlan):
             lr_min=lr_min,
             **loss_kwargs,
         )
-        self.beta = beta
+        self.adv_clf_weight = adv_clf_weight
         self.mode = mode
         self.adv_period = adv_period
 
-        self.loss_kwargs.update({"classification_ratio": classification_ratio})
+        self.loss_kwargs.update({"cf_weight": cf_weight,
+                                 "alpha": alpha,
+                                 "clf_weight": clf_weight,
+                                 "mode": mode,
+                                 "cf_mode": cf_mode})
 
-        if adversarial_classifier is True:
-            self.n_output_classifier = 2
-            self.adversarial_classifier = Classifier(
-                n_input=self.module.n_latent,
-                n_hidden=32,
-                n_labels=self.n_output_classifier,
-                n_layers=2,
-                logits=True,
-            ).to(device)
+        self.module = module
+        self.zs_num = module.zs_num
+        self.n_cat_list = module.n_cat_list
+        self.adv_input_size = module.n_latent_shared + module.n_latent_attribute * (module.zs_num - 1)
+
+        self.adv_clf_list = nn.ModuleList([])
+        for i in range(self.zs_num):
+            self.adv_clf_list.append(
+                Classifier(
+                    n_input=self.adv_input_size,
+                    n_labels=self.n_cat_list[i],
+                ).to(device)
+            )
+
+        # set require grad
+        if not self.is_adv_in_train_mode():
+            for classifier in self.adv_clf_list:
+                classifier.requires_grad = False
         else:
-            self.adversarial_classifier = adversarial_classifier
-        self.scale_adversarial_loss = scale_adversarial_loss
+            for classifier in self.adv_clf_list:
+                classifier.requires_grad = True
 
+        self.scale_adversarial_loss = scale_adversarial_loss
         self.automatic_optimization = False
 
+    def is_adv_in_train_mode(self):
+        return TRAIN_MODE.ADVERSARIAL in self.mode
 
     @staticmethod
     def _create_elbo_metric_components(mode: str, n_total: Optional[int] = None):
@@ -197,32 +215,29 @@ class FairVITrainingPlan(TrainingPlan):
                     prog_bar=True
                 )
 
-    def loss_adversarial_classifier(self, z_shared, zs, compute_for_classifier=True):
+    def adv_classifier_metrics(self, inference_outputs, detach_z=True):
         """Loss for adversarial classifier."""
-        if compute_for_classifier:
+        z_shared = inference_outputs["z_shared"]
+        zs = inference_outputs["zs"]
+        cat_covs = inference_outputs["cat_covs"]
+
+        if detach_z:
             # detach z
             zs = [zs_i.detach() for zs_i in zs]
             z_shared = z_shared.detach()
-            zs_concat = torch.cat(zs, dim=-1).to(device)
-            z_concat = torch.cat([z_shared, zs_concat], dim=-1).to(device)
-            # permute z
-            z_list_perm = [z_shared] + zs
-            random.shuffle(z_list_perm)
-            z_shared_perm = z_list_perm[0]
-            zs_perm = z_list_perm[1:]
-            zs_concat_perm = torch.cat(zs_perm, dim=-1).to(device)
-            z_concat_perm = torch.cat([z_shared_perm, zs_concat_perm], dim=-1).to(device)
-            # give to adversarial_classifier and compute loss
-            true_pred = torch.nn.LogSoftmax(dim=1)(self.adversarial_classifier(z_concat)).to(device)
-            false_pred = torch.nn.LogSoftmax(dim=1)(self.adversarial_classifier(z_concat_perm)).to(device)
-            loss = -(torch.mean(true_pred[:, 0]) + torch.mean(false_pred[:, 1]))
-        else:
-            zs_concat = torch.cat(zs, dim=-1).to(device)
-            z_concat = torch.cat([z_shared, zs_concat], dim=-1).to(device)
-            cls_pred = torch.nn.LogSoftmax(dim=1)(self.adversarial_classifier(z_concat)).to(device)
-            loss = torch.mean(cls_pred[:, 0]) - torch.mean(cls_pred[:, 1])
 
-        return loss
+        logits = []
+        for i in range(self.zs_num):
+            # create Z - Zi
+            zs_sub_i = [zs[j] for j in range(self.zs_num) if j != i]
+            z_concat_sub_i = torch.cat([z_shared, *zs_sub_i], dim=-1).to(device)
+            # give to adv_clf_i
+            adv_clf_i = self.adv_clf_list[i]
+            logits_i = adv_clf_i(z_concat_sub_i)
+            logits += [logits_i]
+
+        return self.module.compute_clf_metrics(logits, cat_covs)
+
 
     def training_step(self, batch, batch_idx):
         """Training step for adversarial training."""
@@ -248,46 +263,37 @@ class FairVITrainingPlan(TrainingPlan):
         inference_outputs, _, losses = self.forward(
             batch, loss_kwargs=input_kwargs
         )
-        z_shared = inference_outputs["z_shared"]
-        zs = inference_outputs["zs"]
 
-        if self.current_epoch % self.adv_period <= ((self.adv_period - 1) // 2) or \
-                (TRAIN_MODE.ADVERSARIAL not in self.mode):
+        # train normally
+        if (self.current_epoch % self.adv_period == 0) or (not self.is_adv_in_train_mode()):
 
-            # train normally
             loss = losses[LOSS_KEYS.LOSS]
 
             # fool classifier if doing adversarial training
-            if (TRAIN_MODE.ADVERSARIAL in self.mode) and kappa > 0 and (self.adversarial_classifier is not False):
-                fool_loss = self.loss_adversarial_classifier(z_shared, zs, False) * self.beta
-                loss += fool_loss * kappa
-
-                self.log("adv_fool_loss_train", fool_loss, on_step=False, on_epoch=True, prog_bar=True)
-
-            self.compute_and_log_metrics(losses, self.train_metrics, "train")
+            if self.is_adv_in_train_mode() and kappa > 0:
+                ce_loss_sum, accuracy, f1 = self.adv_classifier_metrics(inference_outputs, False)
+                loss -= ce_loss_sum * kappa * self.adv_clf_weight
 
             opt1.zero_grad()
             self.manual_backward(loss)
             opt1.step()
 
-        if self.adv_period == 1 or (self.current_epoch % self.adv_period >= ((self.adv_period - 1) // 2)
-                                    and (TRAIN_MODE.ADVERSARIAL in self.mode)):
+        # train adversarial classifier
+        if self.is_adv_in_train_mode() and (opt2 is not None):
 
-            # train adversarial classifier
-            if (TRAIN_MODE.ADVERSARIAL in self.mode) and (opt2 is not None):
-                loss = self.loss_adversarial_classifier(z_shared, zs, True)
+            ce_loss_sum, accuracy, f1 = self.adv_classifier_metrics(inference_outputs, True)
+            ce_loss_sum *= kappa
+            opt2.zero_grad()
+            self.manual_backward(ce_loss_sum)
+            opt2.step()
 
-                self.log("adv_loss_train", loss, on_step=False, on_epoch=True, prog_bar=True)
+        if self.is_adv_in_train_mode():
+            ce_loss_mean = ce_loss_sum / len(range(self.zs_num))
+            losses.update({'adv_ce': ce_loss_mean, 'adv_acc': accuracy, 'adv_f1': f1})
 
-                loss *= kappa
-                opt2.zero_grad()
-                self.manual_backward(loss)
-                opt2.step()
+        self.compute_and_log_metrics(losses, self.train_metrics, "train")
 
-        results = {}
-        for key in losses:
-            results.update({key: losses[key]})
-        return results
+        return losses
 
     def validation_step(self, batch, batch_idx):
         """Validation step."""
@@ -295,25 +301,18 @@ class FairVITrainingPlan(TrainingPlan):
         input_kwargs = {}
         input_kwargs.update(self.loss_kwargs)
 
-        inf_outputs, gen_outputs, losses = self.forward(
+        inference_outputs, _, losses = self.forward(
             batch, loss_kwargs=input_kwargs
         )
 
+        ce_loss_sum, accuracy, f1 = self.adv_classifier_metrics(inference_outputs, True)
+
+        ce_loss_mean = ce_loss_sum / len(range(self.zs_num))
+        losses.update({'adv_ce': ce_loss_mean, 'adv_acc': accuracy, 'adv_f1': f1})
+
         self.compute_and_log_metrics(losses, self.val_metrics, "validation")
 
-        # log adversarial metrics
-        z_shared = inf_outputs["z_shared"].detach()
-        zs = [z.detach() for z in inf_outputs["zs"]]
-        fool_loss = self.loss_adversarial_classifier(z_shared, zs, False)
-        adv_loss = self.loss_adversarial_classifier(z_shared, zs, True)
-        self.log("adv_fool_loss_validation", fool_loss, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("adv_loss_validation", adv_loss, on_step=False, on_epoch=True, prog_bar=True)
-
-        results = {}
-        for key in losses:
-            results.update({key: losses[key]})
-
-        return results
+        return losses
 
     def on_train_epoch_end(self):
         """Update the learning rate via scheduler steps."""
@@ -358,9 +357,10 @@ class FairVITrainingPlan(TrainingPlan):
                 },
             )
 
-        if self.adversarial_classifier is not False:
+        if self.is_adv_in_train_mode():
+
             params2 = filter(
-                lambda p: p.requires_grad, self.adversarial_classifier.parameters()
+                lambda p: p.requires_grad, self.adv_clf_list.parameters()
             )
             optimizer2 = torch.optim.Adam(
                 params2, lr=1e-3, eps=0.01, weight_decay=self.weight_decay
