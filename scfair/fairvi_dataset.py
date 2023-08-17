@@ -63,10 +63,16 @@ class FairAnnTorchDataset(Dataset):
         self._setup_getitem()
         self._set_data_attr()
 
-        self.idx_cf_tensor = torch.tensor([]).to(device) # idx_cf_tensor[idx] = [idx_cf with cov_column i out]
-        # ith idx_cf is a random index (diff from idx if possible) which has covs (except ith cov) as idx
+        self.idx_cf_tensor = torch.tensor([]).to(device)  # idx_cf_tensor[idx] = [idx_cf with cov_column j out]
+        # jth idx_cf is a random index (diff from idx if possible) which has same covs (except jth cov) as idx
 
         self.setup_idx_cf_tensor()
+
+        self.cell_to_idx = self.adata_manager.cell_to_idx
+        # cell_to_idx[i] = idx in self.data that has cell i
+        # (for all i in the original adata ---- useless if cell i not in self.data)
+        # (used when original adata had all cells but now a subset is removed in adata)
+        self.idx_to_cell = self.adata_manager.idx_to_cell
 
     def create_idx_cf_tensor(self):
         covs = torch.tensor(self.data[REGISTRY_KEYS.CAT_COVS_KEY].values).to(device)
@@ -168,11 +174,13 @@ class FairAnnTorchDataset(Dataset):
             # need to sort idxs for h5py datasets
             idx = np.sort(idx)
 
+        cell_idx = self.idx_to_cell[idx].tolist()
+
         for key, dtype in self.attributes_and_types.items():
             cur_data = self.data[key]
             get_i = lambda f: (f(cur_data, idx),
-                               *[f(cur_data, self.idx_cf_tensor[idx][:, j].tolist())
-                                 for j in range(self.idx_cf_tensor[idx].size(1))])
+                               *[f(cur_data, self.cell_to_idx[self.idx_cf_tensor[cell_idx][:, j].tolist()].tolist())
+                                 for j in range(self.idx_cf_tensor[cell_idx].size(1))])
 
             # for backed anndata
             if isinstance(cur_data, h5py.Dataset) or isinstance(
