@@ -95,7 +95,6 @@ class fairVAE(BaseModuleClass):
             log_variational: bool = True,
             gene_likelihood: Tunable[Literal["zinb", "nb", "poisson"]] = "zinb",
             latent_distribution: Tunable[Literal["normal", "ln"]] = "normal",
-            encode_covariates: Tunable[bool] = True,
             deeply_inject_covariates: Tunable[bool] = True,
             use_batch_norm: Tunable[Literal["encoder", "decoder", "none", "both"]] = "both",
             use_layer_norm: Tunable[Literal["encoder", "decoder", "none", "both"]] = "none",
@@ -109,7 +108,6 @@ class fairVAE(BaseModuleClass):
         self.gene_likelihood = gene_likelihood
         # Automatically deactivate if useless
         self.latent_distribution = latent_distribution
-        self.encode_covariates = encode_covariates
 
         self.px_r = torch.nn.Parameter(torch.randn(n_input)).to(device)
 
@@ -130,7 +128,7 @@ class fairVAE(BaseModuleClass):
                 Encoder(
                     n_input_encoder,
                     n_latent_shared,
-                    n_cat_list=self.n_cat_list if self.encode_covariates else None,
+                    n_cat_list=self.n_cat_list,
                     n_layers=n_layers,
                     n_hidden=n_hidden,
                     dropout_rate=dropout_rate,
@@ -149,7 +147,7 @@ class fairVAE(BaseModuleClass):
                 Encoder(
                     n_input_encoder,
                     n_latent_attribute,
-                    n_cat_list=self.n_cat_list if self.encode_covariates else None,
+                    n_cat_list=self.n_cat_list,
                     n_layers=n_layers,
                     n_hidden=n_hidden,
                     dropout_rate=dropout_rate,
@@ -169,7 +167,7 @@ class fairVAE(BaseModuleClass):
                 Encoder(
                     0,
                     n_latent_attribute,
-                    n_cat_list=[self.n_cat_list[k]] if self.encode_covariates else None,
+                    n_cat_list=[self.n_cat_list[k]],
                     n_layers=n_layers,
                     n_hidden=n_hidden,
                     dropout_rate=dropout_rate,
@@ -282,10 +280,7 @@ class fairVAE(BaseModuleClass):
         if self.log_variational:
             x_ = torch.log(1 + x_)
 
-        if cat_covs is not None and self.encode_covariates:
-            cat_in = torch.split(cat_covs, 1, dim=1)
-        else:
-            cat_in = ()
+        cat_in = torch.split(cat_covs, 1, dim=1)
 
         # z_shared
 
@@ -295,8 +290,7 @@ class fairVAE(BaseModuleClass):
         # zs
 
         encoders_outputs = []
-        encoders_inputs = [(x_, *cat_in) for _ in cat_in] if self.encode_covariates \
-            else [(x_,) for _ in self.z_encoders_list]
+        encoders_inputs = [(x_, *cat_in) for _ in cat_in]
 
         for i in range(len(self.z_encoders_list) - 1):
             encoders_outputs.append(self.z_encoders_list[i + 1](*encoders_inputs[i]))
@@ -308,9 +302,7 @@ class fairVAE(BaseModuleClass):
 
         encoders_outputs_cf = []
         encoders_inputs_cf = [(x_, *torch.split(cat_covs_cf[i], 1, dim=1))
-                              for i in range(len(cat_covs_cf))] \
-            if self.encode_covariates \
-            else [(x_,) for _ in self.z_encoders_list]
+                              for i in range(len(cat_covs_cf))]
 
         for i in range(len(self.z_encoders_list) - 1):
             encoders_outputs_cf.append(self.z_encoders_list[i + 1](*encoders_inputs_cf[i]))
@@ -417,6 +409,64 @@ class fairVAE(BaseModuleClass):
 
         return output_dict
 
+    def sub_forward(self, idx,
+                    x, cat_covs,
+                    detach_x=False,
+                    detach_z=False):
+        """
+
+        performs forward (inference + generative) only on enc/dec idx
+
+        Parameters
+        ----------
+        idx
+            index of enc/dec in [1, ..., self.zs_num]
+        x
+        cat_covs
+        detach_x
+        detach_z
+
+        """
+        x_ = x
+        if detach_x:
+            x_ = x.detach()
+
+        library = torch.log(x_.sum(1)).unsqueeze(1)
+        if self.log_variational:
+            x_ = torch.log(1 + x_)
+
+        cat_in = torch.split(cat_covs, 1, dim=1)
+
+        qz, z = (self.z_encoders_list[idx](x_, *cat_in))
+        if detach_z:
+            z = z.detach()
+
+        dec_cats = [cat_in[j] for j in range(len(cat_in)) if j != idx-1]
+
+        x_decoder = self.x_decoders_list[idx]
+
+        px_scale, px_r, px_rate, px_dropout = x_decoder(
+            self.dispersion,
+            z,
+            library,
+            *dec_cats
+        )
+        px_r = torch.exp(self.px_r)
+
+        if self.gene_likelihood == "zinb":
+            px = ZeroInflatedNegativeBinomial(
+                mu=px_rate,
+                theta=px_r,
+                zi_logits=px_dropout,
+                scale=px_scale,
+            )
+        elif self.gene_likelihood == "nb":
+            px = NegativeBinomial(mu=px_rate, theta=px_r, scale=px_scale)
+        elif self.gene_likelihood == "poisson":
+            px = Poisson(px_rate, scale=px_scale)
+
+        return px
+
     def classification_logits(self, inference_outputs):
         zs = inference_outputs["zs"]
         logits = []
@@ -454,23 +504,47 @@ class fairVAE(BaseModuleClass):
             tensors,
             inference_outputs,
             generative_outputs,
+            cf_weight: Tunable[Union[float, int]],  # RECONST_LOSS_X_CF weight
             alpha: Tunable[Union[float, int]],  # KL Zi weight
             clf_weight: Tunable[Union[float, int]],  # Si classifier weight
-            mode: Tuple[int],
+            mode: Tunable[Tuple[int]],
+            cf_mode: Tunable[int],
             kl_weight: float = 1.0,
     ):
+        # reconstruction loss X
 
         x = tensors[REGISTRY_KEYS.X_KEY]
-
-        # reconstruction losses
 
         reconst_loss_x_list = [-torch.mean(px.log_prob(x[0]).sum(-1)) for px in generative_outputs["px"]]
         reconst_loss_x_dict = {'x_' + str(i): reconst_loss_x_list[i] for i in range(len(reconst_loss_x_list))}
         reconst_loss_x = sum(reconst_loss_x_list)
 
-        reconst_loss_x_cf_list = [-torch.mean(generative_outputs[f"px_{cf}"].log_prob(x[cf]).sum(-1)) for cf in range(1, len(x))]
-        reconst_loss_x_cf_dict = {'xcf_' + str(i+1): reconst_loss_x_cf_list[i] for i in range(len(reconst_loss_x_cf_list))}
-        reconst_loss_x_cf = sum(reconst_loss_x_cf_list)
+        #  reconstruction loss X'
+
+        if cf_mode == CF_MODE.NO_SEMI_AE:
+
+            reconst_loss_x_cf_list = [-torch.mean(generative_outputs[f"px_{cf}"].log_prob(x[cf]).sum(-1)) for cf in
+                                      range(1, len(x))]
+            reconst_loss_x_cf_dict = {'xcf_' + str(i + 1): reconst_loss_x_cf_list[i] for i in
+                                      range(len(reconst_loss_x_cf_list))}
+            reconst_loss_x_cf = sum(reconst_loss_x_cf_list)
+
+        else:
+
+            reconst_loss_x_cf_dict = {}
+
+            detach_x = (cf_mode == CF_MODE.SEMI_AE_DETACH_DEC_ENC)
+            detach_z = (cf_mode == CF_MODE.SEMI_AE_DETACH_DEC) or (cf_mode == CF_MODE.SEMI_AE_DETACH_DEC_ENC)
+
+            for cf in range(1, len(x)):
+
+                px_cf = self.sub_forward(idx=cf, x=generative_outputs[f"px_{cf}"].mean,
+                                         cat_covs=tensors[REGISTRY_KEYS.CAT_COVS_KEY][cf].to(device),
+                                         detach_x=detach_x, detach_z=detach_z)
+
+                reconst_loss_x_cf_dict['xcf_' + str(cf)] = -torch.mean(px_cf.log_prob(x[cf]).sum(-1))
+
+            reconst_loss_x_cf = sum(reconst_loss_x_cf_dict.values())
 
         # KL divergence Z
 
@@ -489,7 +563,7 @@ class fairVAE(BaseModuleClass):
         # total loss
         loss = reconst_loss_x
         if TRAIN_MODE.RECONST_CF in mode:
-            loss += reconst_loss_x_cf
+            loss += reconst_loss_x_cf * cf_weight
         if TRAIN_MODE.KL_Z in mode:
             loss += sum(kl_z_list) * kl_weight * alpha
         if TRAIN_MODE.CLASSIFICATION in mode:
