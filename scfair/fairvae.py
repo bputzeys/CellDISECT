@@ -521,30 +521,11 @@ class fairVAE(BaseModuleClass):
 
         #  reconstruction loss X'
 
-        if cf_mode == CF_MODE.NO_SEMI_AE:
-
-            reconst_loss_x_cf_list = [-torch.mean(generative_outputs[f"px_{cf}"].log_prob(x[cf]).sum(-1)) for cf in
-                                      range(1, len(x))]
-            reconst_loss_x_cf_dict = {'xcf_' + str(i + 1): reconst_loss_x_cf_list[i] for i in
-                                      range(len(reconst_loss_x_cf_list))}
-            reconst_loss_x_cf = sum(reconst_loss_x_cf_list)
-
-        else:
-
-            reconst_loss_x_cf_dict = {}
-
-            detach_x = (cf_mode == CF_MODE.SEMI_AE_DETACH_DEC_ENC)
-            detach_z = (cf_mode == CF_MODE.SEMI_AE_DETACH_DEC) or (cf_mode == CF_MODE.SEMI_AE_DETACH_DEC_ENC)
-
-            for cf in range(1, len(x)):
-
-                px_cf = self.sub_forward(idx=cf, x=generative_outputs[f"px_{cf}"].mean,
-                                         cat_covs=tensors[REGISTRY_KEYS.CAT_COVS_KEY][cf].to(device),
-                                         detach_x=detach_x, detach_z=detach_z)
-
-                reconst_loss_x_cf_dict['xcf_' + str(cf)] = -torch.mean(px_cf.log_prob(x[cf]).sum(-1))
-
-            reconst_loss_x_cf = sum(reconst_loss_x_cf_dict.values())
+        reconst_loss_x_cf_list = [-torch.mean(generative_outputs[f"px_{cf}"].log_prob(x[cf]).sum(-1)) for cf in
+                                  range(1, len(x))]
+        reconst_loss_x_cf_dict = {'xcf_' + str(i + 1): reconst_loss_x_cf_list[i] for i in
+                                  range(len(reconst_loss_x_cf_list))}
+        reconst_loss_x_cf = sum(reconst_loss_x_cf_list)
 
         # KL divergence Z
 
