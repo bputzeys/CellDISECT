@@ -2,4 +2,4 @@
 Fairness in single-cell data
 
 # install
-pip install git+https://github.com/M0hammadL/scfair-1.git
+pip install git+https://github.com/M0hammadL/scfair.git
