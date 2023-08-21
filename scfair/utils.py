@@ -13,13 +13,6 @@ class TRAIN_MODE(int, Enum):
     ADVERSARIAL = 4
 
 
-class CF_MODE(int, Enum):
-    NO_SEMI_AE = 0
-    SEMI_AE_DETACH_DEC_ENC = 1
-    SEMI_AE_DETACH_DEC = 2
-    SEMI_AE_NO_DETACH = 3
-
-
 class LOSS_KEYS(str, Enum):
     LOSS = "loss"
     RECONST_LOSS_X = "rec_x"
