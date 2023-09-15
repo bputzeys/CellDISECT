@@ -100,14 +100,6 @@ def ood_for_given_covs(
 
     print(f'Counterfactual prediction for {cov_str_cf}, and {other_covs_str}')
 
-    print()
-    print('R2 means metrics')
-    r2_eval(adata, cov_name, cov_value_cf, true_x_counts_mean, px_cf_mean_pred, n_top_deg=n_top_deg)
-
-    print()
-    print('R2 variance metrics')
-    r2_eval(adata, cov_name, cov_value_cf, true_x_counts_variance, px_cf_variance_pred, n_top_deg=n_top_deg)
-
     return true_x_counts_mean, true_x_counts_variance, px_cf_mean_pred, px_cf_variance_pred
 
 
@@ -120,13 +112,21 @@ def r2_eval(adata, cov_name, cov_value_cf, true_x_counts_stat, px_cf_stat_pred, 
     deg_idx = [i for i, _ in enumerate(adata.var['name']) if adata.var['name'][i] in list(deg_names)]
 
     r2 = r2_score(true_x_counts_stat, px_cf_stat_pred)
-    r2_log = r2_score(torch.log1p_(true_x_counts_stat), torch.log1p_(px_cf_stat_pred))
     r2_deg = r2_score(true_x_counts_stat[deg_idx], px_cf_stat_pred[deg_idx])
-    r2_log_deg = r2_score(torch.log1p_(true_x_counts_stat[deg_idx]), torch.log1p_(px_cf_stat_pred[deg_idx]))
+
+    try:
+        r2_log = r2_score(np.log1p(true_x_counts_stat), np.log1p(px_cf_stat_pred))
+        r2_log_deg = r2_score(np.log1p(true_x_counts_stat[deg_idx]), np.log1p(px_cf_stat_pred[deg_idx]))
+    except:
+        r2_log = r2_score(torch.log1p_(true_x_counts_stat), torch.log1p_(px_cf_stat_pred))
+        r2_log_deg = r2_score(torch.log1p_(true_x_counts_stat[deg_idx]), torch.log1p_(px_cf_stat_pred[deg_idx]))
 
     print('All Genes')
     print(f'R2 = {r2:.4f}')
     print(f'R2 log = {r2_log:.4f}')
+
     print(f'DE Genes (n_top={n_top_deg})')
     print(f'R2 = {r2_deg:.4f}')
     print(f'R2 log = {r2_log_deg:.4f}')
+
+    return r2, r2_log, r2_deg, r2_log_deg
