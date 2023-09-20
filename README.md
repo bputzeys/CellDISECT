@@ -1,6 +1,6 @@
 # scfair
 
-Fairness in single-cell data
+Disentanglement, Fairness, and Causality in single-cell data.
 
 
 # install
