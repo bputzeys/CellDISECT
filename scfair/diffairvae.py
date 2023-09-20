@@ -468,7 +468,7 @@ class DiffairVAE(BaseModuleClass):
             clf_weight: Tunable[Union[float, int]],  # Si classifier weight
             mode: Tunable[Tuple[int]],
             n_cf: Tunable[int] = 10,  # number of X_cf recons (a random half-batch subset for each)
-            kl_weight: float = 1.0,
+            kl_weight: float = 1.0,  # redundant wrt beta? check
     ):
         # reconstruction loss X
 
