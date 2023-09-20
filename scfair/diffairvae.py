@@ -350,7 +350,7 @@ class DiffairVAE(BaseModuleClass):
                 library,
                 *dec_covs
             )
-            px_r = torch.exp(self.px_r)
+            px_r = torch.exp(self.px_r) # check: exponentiation should be avoided if log_variational==False
 
             if self.gene_likelihood == "zinb":
                 px = ZeroInflatedNegativeBinomial(
