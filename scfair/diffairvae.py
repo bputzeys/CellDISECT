@@ -116,6 +116,7 @@ class DiffairVAE(BaseModuleClass):
 
         self.zs_num = len(self.n_cat_list)
 
+        # create 0-th encoder
         self.z_encoders_list = nn.ModuleList(
             [
                 Encoder(
@@ -134,7 +135,8 @@ class DiffairVAE(BaseModuleClass):
                 ).to(device)
             ]
         )
-
+        
+        # create the other n encoders
         self.z_encoders_list.extend(
             [
                 Encoder(
@@ -154,7 +156,8 @@ class DiffairVAE(BaseModuleClass):
                 for k in range(self.zs_num)
             ]
         )
-
+        
+        # create prior encoders for the KL loss term
         self.z_prior_encoders_list = nn.ModuleList(
             [
                 Encoder(
@@ -176,7 +179,6 @@ class DiffairVAE(BaseModuleClass):
         )
 
         # Decoders
-
         self.x_decoders_list = nn.ModuleList(
             [
                 DecoderSCVI(
@@ -212,6 +214,7 @@ class DiffairVAE(BaseModuleClass):
 
         self.n_latent = n_latent_shared + n_latent_attribute * self.zs_num
 
+        # classifiers (adversarial classifiers in the sense of FactorVAE are part of the training plan, not the DiffairVAE class)
         self.s_classifiers_list = nn.ModuleList([])
         for i in range(self.zs_num):
             self.s_classifiers_list.append(
@@ -350,7 +353,7 @@ class DiffairVAE(BaseModuleClass):
                 library,
                 *dec_covs
             )
-            px_r = torch.exp(self.px_r)
+            px_r = torch.exp(self.px_r) # check: exponentiation should be avoided if log_variational==False
 
             if self.gene_likelihood == "zinb":
                 px = ZeroInflatedNegativeBinomial(
@@ -468,7 +471,7 @@ class DiffairVAE(BaseModuleClass):
             clf_weight: Tunable[Union[float, int]],  # Si classifier weight
             mode: Tunable[Tuple[int]],
             n_cf: Tunable[int] = 10,  # number of X_cf recons (a random half-batch subset for each)
-            kl_weight: float = 1.0,
+            kl_weight: float = 1.0,  # redundant wrt beta? check
     ):
         # reconstruction loss X
 
