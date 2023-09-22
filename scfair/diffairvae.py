@@ -470,8 +470,8 @@ class DiffairVAE(BaseModuleClass):
             beta: Tunable[Union[float, int]],  # KL Zi weight
             clf_weight: Tunable[Union[float, int]],  # Si classifier weight
             mode: Tunable[Tuple[int]],
-            n_cf: Tunable[int] = 10,  # number of X_cf recons (a random half-batch subset for each)
-            kl_weight: float = 1.0,  # redundant wrt beta? check
+            n_cf: Tunable[int],  # number of X_cf recons (a random half-batch subset for each)
+            kl_weight: float = 1.0,
     ):
         # reconstruction loss X
 
@@ -554,3 +554,4 @@ class DiffairVAE(BaseModuleClass):
         }
 
         return loss_dict
+
