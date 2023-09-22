@@ -87,16 +87,16 @@ class DiffairVI(
     _train_runner_cls = TrainRunner
 
     def __init__(
-        self,
-        adata: AnnData,
-        n_hidden: int = 128,
-        n_latent_shared: int = 10,
-        n_latent_attribute: int = 10,
-        n_layers: int = 1,
-        dropout_rate: float = 0.1,
-        gene_likelihood: Literal["zinb", "nb", "poisson"] = "zinb",
-        latent_distribution: Literal["normal", "ln"] = "normal",
-        **model_kwargs,
+            self,
+            adata: AnnData,
+            n_hidden: int = 128,
+            n_latent_shared: int = 10,
+            n_latent_attribute: int = 10,
+            n_layers: int = 1,
+            dropout_rate: float = 0.1,
+            gene_likelihood: Literal["zinb", "nb", "poisson"] = "zinb",
+            latent_distribution: Literal["normal", "ln"] = "normal",
+            **model_kwargs,
     ):
         super().__init__(adata)
 
@@ -139,15 +139,15 @@ class DiffairVI(
     @classmethod
     @setup_anndata_dsp.dedent
     def setup_anndata(
-        cls,
-        adata: AnnData,
-        layer: Optional[str] = None,
-        batch_key: Optional[str] = None,
-        labels_key: Optional[str] = None,
-        size_factor_key: Optional[str] = None,
-        categorical_covariate_keys: Optional[List[str]] = None,
-        continuous_covariate_keys: Optional[List[str]] = None,
-        **kwargs,
+            cls,
+            adata: AnnData,
+            layer: Optional[str] = None,
+            batch_key: Optional[str] = None,
+            labels_key: Optional[str] = None,
+            size_factor_key: Optional[str] = None,
+            categorical_covariate_keys: Optional[List[str]] = None,
+            continuous_covariate_keys: Optional[List[str]] = None,
+            **kwargs,
     ):
         """%(summary)s.
         Parameters
@@ -186,12 +186,12 @@ class DiffairVI(
     # covs[cov_idx] = cov_value_cf, covs[others_idx] = adata.obs[others_idx]
     @torch.no_grad()
     def predict_given_covs(
-        self,
-        adata: AnnData,  # source anndata with fixed cov values
-        cats: List[str],
-        cov_idx: int,  # index in cats starting from 0
-        cov_value_cf,
-        batch_size: Optional[int] = None,
+            self,
+            adata: AnnData,  # source anndata with fixed cov values
+            cats: List[str],
+            cov_idx: int,  # index in cats starting from 0
+            cov_value_cf,
+            batch_size: Optional[int] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
 
         self._check_if_trained(warn=False)
@@ -216,8 +216,7 @@ class DiffairVI(
         px_cf_mean_list = []
 
         for tensors in scdl:
-
-            px_cf = self.module.sub_forward(idx=cov_idx+1, x=tensors[REGISTRY_KEYS.X_KEY].to(device),
+            px_cf = self.module.sub_forward(idx=cov_idx + 1, x=tensors[REGISTRY_KEYS.X_KEY].to(device),
                                             cat_covs=tensors[REGISTRY_KEYS.CAT_COVS_KEY].to(device))
 
             px_cf_mean_list.append(px_cf.mean)
@@ -233,12 +232,12 @@ class DiffairVI(
 
     @torch.no_grad()
     def get_latent_representation(
-        self,
-        adata: Optional[AnnData] = None,
-        indices: Optional[Sequence[int]] = None,
-        batch_size: Optional[int] = None,
-        nullify_cat_covs_indices: Optional[List[int]] = None,
-        nullify_shared: Optional[bool] = False
+            self,
+            adata: Optional[AnnData] = None,
+            indices: Optional[Sequence[int]] = None,
+            batch_size: Optional[int] = None,
+            nullify_cat_covs_indices: Optional[List[int]] = None,
+            nullify_shared: Optional[bool] = False
     ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
         """
         Parameters
@@ -273,22 +272,22 @@ class DiffairVI(
 
     # @devices_dsp.dedent
     def train(
-        self,
-        max_epochs: Optional[int] = None,
-        use_gpu: Optional[Union[str, int, bool]] = True,
-        train_size: float = 0.8,
-        validation_size: Optional[float] = None,
-        batch_size: int = 256,
-        early_stopping: bool = True,
-        plan_kwargs: Optional[dict] = None,
-        cf_weight: Tunable[Union[float, int]] = 1,  # RECONST_LOSS_X_CF weight
-        beta: Tunable[Union[float, int]] = 1,  # KL Zi weight
-        clf_weight: Tunable[Union[float, int]] = 50,  # Si classifier weight
-        adv_clf_weight: Tunable[Union[float, int]] = 10,  # adversarial classifier weight
-        adv_period: Tunable[int] = 1,  # adversarial training period
-        mode: Tunable[Tuple[int]] = (0,),  # training mode
-        n_cf: Tunable[int] = 10,  # number of X_cf recons (a random half-batch subset for each)
-        **trainer_kwargs,
+            self,
+            max_epochs: Optional[int] = None,
+            use_gpu: Optional[Union[str, int, bool]] = True,
+            train_size: float = 0.8,
+            validation_size: Optional[float] = None,
+            batch_size: int = 256,
+            early_stopping: bool = True,
+            plan_kwargs: Optional[dict] = None,
+            cf_weight: Tunable[Union[float, int]] = 1,  # RECONST_LOSS_X_CF weight
+            beta: Tunable[Union[float, int]] = 1,  # KL Zi weight
+            clf_weight: Tunable[Union[float, int]] = 50,  # Si classifier weight
+            adv_clf_weight: Tunable[Union[float, int]] = 10,  # adversarial classifier weight
+            adv_period: Tunable[int] = 1,  # adversarial training period
+            mode: Tunable[Tuple[int]] = (0, 1, 2, 3, 4),  # training mode
+            n_cf: Tunable[int] = 10,  # number of X_cf recons (a random permutation of n VAEs and a random half-batch subset for each trial)
+            **trainer_kwargs,
     ):
         """Train the model.
         Parameters
@@ -325,7 +324,7 @@ class DiffairVI(
         mode
             training mode
         n_cf
-            number of X_cf recons (a random half-batch subset for each)
+            number of X_cf recons (a random permutation of n VAEs and a random half-batch subset for each trial)
         **trainer_kwargs
             Other keyword args for :class:`~scvi.train.Trainer`.
         """
@@ -342,7 +341,6 @@ class DiffairVI(
             adata_manager=self.adata_manager,
             train_size=train_size,
             validation_size=validation_size,
-            shuffle_set_split=True,
             batch_size=batch_size,
         )
         training_plan = self._training_plan_cls(self.module,
