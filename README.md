@@ -1,6 +1,5 @@
-# scfair
-
-Disentanglement, Fairness, and Causality in single-cell data.
+# Disentangling covariates to predict counterfacctuals (dis2p)
+Causal generative model designed to disentangle known covariate variations from unknown ones at test time while simultaneously learning to make counterfactual predictions.
 
 
 # Installation
