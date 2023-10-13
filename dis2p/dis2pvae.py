@@ -1,37 +1,29 @@
 import random
-from typing import Callable, Iterable, Literal, Optional, List, Union, Tuple
+from typing import Callable, Iterable, Literal, Optional, Union, Tuple
 
-import numpy as np
 import torch
 import torch.nn.functional as F
 from torch import nn
-from torch import logsumexp
-from torch.distributions import Normal, Bernoulli, Categorical
 from torch.distributions import kl_divergence as kl
+from torchmetrics import Accuracy, F1Score
 
 from scvi import REGISTRY_KEYS
 from scvi.autotune._types import Tunable
 from scvi.distributions import NegativeBinomial, Poisson, ZeroInflatedNegativeBinomial
-from scvi.module.base import BaseModuleClass, LossOutput, auto_move_data
-from scvi.nn import DecoderSCVI, Decoder, Encoder
-
-from torchmetrics import Accuracy, F1Score
+from scvi.module.base import BaseModuleClass, auto_move_data
+from scvi.nn import DecoderSCVI, Encoder
 
 torch.backends.cudnn.benchmark = True
-
 from .utils import *
-
 from scvi.module._classifier import Classifier
 
 dim_indices = 0
-
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-from scvi.autotune._types import Tunable, TunableMixin
 
-
-class DiffairVAE(BaseModuleClass):
-    """Fair Variational auto-encoder module.
+class Dis2pVAE(BaseModuleClass):
+    """
+    Variational auto-encoder module.
 
     Parameters
     ----------
@@ -116,7 +108,6 @@ class DiffairVAE(BaseModuleClass):
 
         self.zs_num = len(self.n_cat_list)
 
-        # create 0-th encoder
         self.z_encoders_list = nn.ModuleList(
             [
                 Encoder(
@@ -135,8 +126,7 @@ class DiffairVAE(BaseModuleClass):
                 ).to(device)
             ]
         )
-        
-        # create the other n encoders
+
         self.z_encoders_list.extend(
             [
                 Encoder(
@@ -156,8 +146,7 @@ class DiffairVAE(BaseModuleClass):
                 for k in range(self.zs_num)
             ]
         )
-        
-        # create prior encoders for the KL loss term
+
         self.z_prior_encoders_list = nn.ModuleList(
             [
                 Encoder(
@@ -179,6 +168,7 @@ class DiffairVAE(BaseModuleClass):
         )
 
         # Decoders
+
         self.x_decoders_list = nn.ModuleList(
             [
                 DecoderSCVI(
@@ -214,7 +204,6 @@ class DiffairVAE(BaseModuleClass):
 
         self.n_latent = n_latent_shared + n_latent_attribute * self.zs_num
 
-        # classifiers (adversarial classifiers in the sense of FactorVAE are part of the training plan, not the DiffairVAE class)
         self.s_classifiers_list = nn.ModuleList([])
         for i in range(self.zs_num):
             self.s_classifiers_list.append(
@@ -223,14 +212,6 @@ class DiffairVAE(BaseModuleClass):
                     n_labels=self.n_cat_list[i],
                 ).to(device)
             )
-
-    def set_require_grad(self, mode):
-        if TRAIN_MODE.CLASSIFICATION not in mode:
-            for classifier in self.s_classifiers_list:
-                classifier.requires_grad = False
-        else:
-            for classifier in self.s_classifiers_list:
-                classifier.requires_grad = True
 
     def _get_inference_input(self, tensors):
 
@@ -353,7 +334,7 @@ class DiffairVAE(BaseModuleClass):
                 library,
                 *dec_covs
             )
-            px_r = torch.exp(self.px_r) # check: exponentiation should be avoided if log_variational==False
+            px_r = torch.exp(self.px_r)
 
             if self.gene_likelihood == "zinb":
                 px = ZeroInflatedNegativeBinomial(
@@ -469,9 +450,8 @@ class DiffairVAE(BaseModuleClass):
             cf_weight: Tunable[Union[float, int]],  # RECONST_LOSS_X_CF weight
             beta: Tunable[Union[float, int]],  # KL Zi weight
             clf_weight: Tunable[Union[float, int]],  # Si classifier weight
-            mode: Tunable[Tuple[int]],
-            n_cf: Tunable[int] = 10,  # number of X_cf recons (a random half-batch subset for each)
-            kl_weight: float = 1.0,  # redundant wrt beta? check
+            n_cf: Tunable[int],  # number of X_cf recons (X_cf = a random permutation of X)
+            kl_weight: float = 1.0,
     ):
         # reconstruction loss X
 
@@ -490,20 +470,20 @@ class DiffairVAE(BaseModuleClass):
 
         for _ in range(n_cf):
 
-            # choose a random half-batch subset as X_cf
+            # choose a random permutation of X as X_cf
 
             idx_shuffled = list(range(batch_size))
             random.shuffle(idx_shuffled)
             idx_shuffled = torch.tensor(idx_shuffled).to(device)
 
-            x_ = torch.index_select(x, 0, idx_shuffled[:batch_size//2]).to(device)
-            x_cf = torch.index_select(x, 0, idx_shuffled[batch_size//2: 2*(batch_size//2)]).to(device)
+            x_ = x
+            x_cf = torch.index_select(x, 0, idx_shuffled).to(device)
 
-            cat_cov_ = torch.index_select(cat_covs, 0, idx_shuffled[:batch_size//2]).to(device)
-            cat_cov_cf = torch.index_select(cat_covs, 0, idx_shuffled[batch_size//2: 2*(batch_size//2)]).to(device)
+            cat_cov_ = cat_covs
+            cat_cov_cf = torch.index_select(cat_covs, 0, idx_shuffled).to(device)
             cat_cov_cf_split = torch.split(cat_cov_cf, 1, dim=1)
 
-            # a random ordering for diffusion through n enc/dec
+            # a random ordering for diffusing through n VAEs
 
             perm = list(range(self.zs_num))
             random.shuffle(perm)
@@ -535,13 +515,10 @@ class DiffairVAE(BaseModuleClass):
         ce_loss_mean = ce_loss_sum / len(range(self.zs_num))
 
         # total loss
-        loss = reconst_loss_x
-        if TRAIN_MODE.RECONST_CF in mode:
-            loss += reconst_loss_x_cf * cf_weight
-        if TRAIN_MODE.KL_Z in mode:
-            loss += sum(kl_z_list) * kl_weight * beta
-        if TRAIN_MODE.CLASSIFICATION in mode:
-            loss += ce_loss_sum * clf_weight
+        loss = reconst_loss_x + \
+               reconst_loss_x_cf * cf_weight + \
+               sum(kl_z_list) * kl_weight * beta + \
+               ce_loss_sum * clf_weight
 
         loss_dict = {
             LOSS_KEYS.LOSS: loss,

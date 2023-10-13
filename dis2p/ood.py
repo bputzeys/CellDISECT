@@ -4,17 +4,15 @@ import torch
 from sklearn.metrics import r2_score
 from anndata import AnnData
 import scanpy as sc
-import itertools
 
-from .diffairvi import DiffairVI
-
+from .dis2pvi import Dis2pVI
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 
 def ood_for_given_covs(
         adata: AnnData,
         cats: List[str],
-        vi_cls=DiffairVI,
+        vi_cls=Dis2pVI,
         model_name='',
         pre_path: str = '.',
         cov_idx: int = 0,
@@ -22,7 +20,6 @@ def ood_for_given_covs(
         cov_value_cf: str = '',
         other_covs_values: Tuple = (0,),
         remove_all_samples_with_other_covs_values: bool = True,
-        n_top_deg: int = 100,
         **train_dict,
 ):
 
@@ -103,7 +100,7 @@ def ood_for_given_covs(
     return true_x_counts_mean, true_x_counts_variance, px_cf_mean_pred, px_cf_variance_pred
 
 
-def r2_eval(adata, cov_name, cov_value_cf, true_x_counts_stat, px_cf_stat_pred, n_top_deg: int = 100):
+def r2_eval(adata, cov_name, cov_value_cf, true_x_counts_stat, px_cf_stat_pred, n_top_deg: int = 20):
     adata.var['name'] = adata.var.index
     sc.tl.rank_genes_groups(adata, cov_name, method='wilcoxon', key_added="wilcoxon")
     ranked_genes = sc.get.rank_genes_groups_df(adata, group=cov_value_cf, key='wilcoxon', gene_symbols='name')

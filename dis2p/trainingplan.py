@@ -1,34 +1,24 @@
-import random
 from collections import OrderedDict
-from typing import Callable, Dict, Iterable, Literal, Optional, Union, List, Tuple
+from typing import Callable, Dict, Iterable, Literal, Optional, Union, Tuple
 
 import optax
 import torch
 from torch import nn
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-import torch.nn.functional as F
-from torchmetrics import Accuracy, F1Score
 
 from scvi.module import Classifier
-from scvi.module.base import BaseModuleClass, LossOutput
+from scvi.module.base import BaseModuleClass
 JaxOptimizerCreator = Callable[[], optax.GradientTransformation]
 TorchOptimizerCreator = Callable[[Iterable[torch.Tensor]], torch.optim.Optimizer]
-
 from scvi.train import TrainingPlan
-
 from .utils import *
-
 from scvi.train._metrics import ElboMetric
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
-
-# for hyperparameter tuning
-# from ray import tune
-from scvi._decorators import classproperty
-from scvi.autotune._types import Tunable, TunableMixin
+from scvi.autotune._types import Tunable
 
 
-class FairVITrainingPlan(TrainingPlan):
+class Dis2pTrainingPlan(TrainingPlan):
     """Train vaes with adversarial loss option to encourage latent space mixing.
 
     Parameters
@@ -84,7 +74,6 @@ class FairVITrainingPlan(TrainingPlan):
         clf_weight: Tunable[Union[float, int]],
         adv_clf_weight: Tunable[Union[float, int]],
         adv_period: Tunable[int],
-        mode: Tunable[Tuple[int]],
         n_cf: Tunable[int],
         optimizer: Tunable[Literal["Adam", "AdamW", "Custom"]] = "Adam",
         optimizer_creator: Optional[TorchOptimizerCreator] = None,
@@ -118,13 +107,11 @@ class FairVITrainingPlan(TrainingPlan):
             **loss_kwargs,
         )
         self.adv_clf_weight = adv_clf_weight
-        self.mode = mode
         self.adv_period = adv_period
 
         self.loss_kwargs.update({"cf_weight": cf_weight,
                                  "beta": beta,
                                  "clf_weight": clf_weight,
-                                 "mode": mode,
                                  "n_cf": n_cf})
 
         self.module = module
@@ -141,19 +128,8 @@ class FairVITrainingPlan(TrainingPlan):
                 ).to(device)
             )
 
-        # set require grad
-        if not self.is_adv_in_train_mode():
-            for classifier in self.adv_clf_list:
-                classifier.requires_grad = False
-        else:
-            for classifier in self.adv_clf_list:
-                classifier.requires_grad = True
-
         self.scale_adversarial_loss = scale_adversarial_loss
         self.automatic_optimization = False
-
-    def is_adv_in_train_mode(self):
-        return TRAIN_MODE.ADVERSARIAL in self.mode
 
     @staticmethod
     def _create_elbo_metric_components(mode: str, n_total: Optional[int] = None):
@@ -265,12 +241,12 @@ class FairVITrainingPlan(TrainingPlan):
         )
 
         # train normally
-        if (self.current_epoch % self.adv_period == 0) or (not self.is_adv_in_train_mode()):
+        if (self.current_epoch % self.adv_period == 0):
 
             loss = losses[LOSS_KEYS.LOSS]
 
             # fool classifier if doing adversarial training
-            if self.is_adv_in_train_mode() and kappa > 0:
+            if kappa > 0:
                 ce_loss_sum, accuracy, f1 = self.adv_classifier_metrics(inference_outputs, False)
                 loss -= ce_loss_sum * kappa * self.adv_clf_weight
 
@@ -279,7 +255,7 @@ class FairVITrainingPlan(TrainingPlan):
             opt1.step()
 
         # train adversarial classifier
-        if self.is_adv_in_train_mode() and (opt2 is not None):
+        if opt2 is not None:
 
             ce_loss_sum, accuracy, f1 = self.adv_classifier_metrics(inference_outputs, True)
             ce_loss_sum *= kappa
@@ -287,9 +263,8 @@ class FairVITrainingPlan(TrainingPlan):
             self.manual_backward(ce_loss_sum)
             opt2.step()
 
-        if self.is_adv_in_train_mode():
-            ce_loss_mean = ce_loss_sum / len(range(self.zs_num))
-            losses.update({'adv_ce': ce_loss_mean, 'adv_acc': accuracy, 'adv_f1': f1})
+        ce_loss_mean = ce_loss_sum / len(range(self.zs_num))
+        losses.update({'adv_ce': ce_loss_mean, 'adv_acc': accuracy, 'adv_f1': f1})
 
         self.compute_and_log_metrics(losses, self.train_metrics, "train")
 
@@ -357,22 +332,18 @@ class FairVITrainingPlan(TrainingPlan):
                 },
             )
 
-        if self.is_adv_in_train_mode():
+        params2 = filter(
+            lambda p: p.requires_grad, self.adv_clf_list.parameters()
+        )
+        optimizer2 = torch.optim.Adam(
+            params2, lr=1e-3, eps=0.01, weight_decay=self.weight_decay
+        )
+        config2 = {"optimizer": optimizer2}
 
-            params2 = filter(
-                lambda p: p.requires_grad, self.adv_clf_list.parameters()
-            )
-            optimizer2 = torch.optim.Adam(
-                params2, lr=1e-3, eps=0.01, weight_decay=self.weight_decay
-            )
-            config2 = {"optimizer": optimizer2}
-
-            # pytorch lightning requires this way to return
-            opts = [config1.pop("optimizer"), config2["optimizer"]]
-            if "lr_scheduler" in config1:
-                scheds = [config1["lr_scheduler"]]
-                return opts, scheds
-            else:
-                return opts
-
-        return config1
+        # pytorch lightning requires this way to return
+        opts = [config1.pop("optimizer"), config2["optimizer"]]
+        if "lr_scheduler" in config1:
+            scheds = [config1["lr_scheduler"]]
+            return opts, scheds
+        else:
+            return opts
