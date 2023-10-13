@@ -3,7 +3,7 @@
 Disentanglement, Fairness, and Causality in single-cell data.
 
 
-# install
+# Installation
 If you have installed an older version of dis2p, uninstall it
 ```
 pip uninstall dis2p
