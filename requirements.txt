@@ -1,3 +1,8 @@
 scvi-tools
 scanpy
 pytorch
+sklearn
+matplotlib
+scipy
+xgboost
+fairlearn
