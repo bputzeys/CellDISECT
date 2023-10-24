@@ -1,0 +1,12 @@
+torch
+torchvision
+torchaudio
+scvi-tools
+scanpy
+ipykernel
+matplotlib
+xgboost
+fairlearn
+scikit-learn
+scib-metrics
+scikit-misc
