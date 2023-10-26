@@ -18,7 +18,7 @@ from .utils_m import *
 from scvi.module._classifier import Classifier
 
 dim_indices = 0
-device = 'cpu' # 'cuda' if torch.cuda.is_available() else 'cpu'
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 # import PeakVI modules
 from scvi.module._peakvae import Decoder as DecoderPeakVI

@@ -14,7 +14,7 @@ from scvi.train import TrainingPlan
 from .utils_m import *
 from scvi.train._metrics import ElboMetric
 
-device = 'cpu' # 'cuda' if torch.cuda.is_available() else 'cpu'
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
 from scvi.autotune._types import Tunable
 
 
