@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 from .dis2pmvae import Dis2pmVAE
 from .trainingplan_m import Dis2pTrainingPlan
 
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
+device = 'cpu' # 'cuda' if torch.cuda.is_available() else 'cpu'
 
 
 class Dis2pmVI(

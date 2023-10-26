@@ -18,7 +18,7 @@ from .utils_m import *
 from scvi.module._classifier import Classifier
 
 dim_indices = 0
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
+device = 'cpu' # 'cuda' if torch.cuda.is_available() else 'cpu'
 
 # import PeakVI modules
 from scvi.module._peakvae import Decoder as DecoderPeakVI
@@ -119,6 +119,7 @@ class Dis2pmVAE(BaseModuleClass):
         self.zs_num = len(self.n_cat_list)
         
         print(n_input_genes)
+        print("debug4")
         print("debug4")
         n_input_encoder_g = n_input_genes
         print("debug5")
@@ -358,13 +359,14 @@ class Dis2pmVAE(BaseModuleClass):
     
 
     
-    @auto_move_data
+    #@auto_move_data
     def inference(self, x,
                   cat_covs,
                   nullify_cat_covs_indices: Optional[List[int]] = None,
                   nullify_shared: Optional[bool] = False,
                   ):
         
+        print("inside inference")
         # split count vector x into rna count and atac count        
 
         if self.n_input_genes == 0:
@@ -406,6 +408,9 @@ class Dis2pmVAE(BaseModuleClass):
         cat_in = torch.split(cat_covs, 1, dim=1)
 
         # z_shared, z_shared_acc: qz is the distribution, z is a sample from it
+        
+        print(f'print {self.z_encoders_list[0]}')
+        print(f'print {self.z_encoders_list[1]}')
 
         qz_shared, z_shared = self.z_encoders_list[0](x_, *cat_in)
         z_shared = z_shared.to(device)
@@ -474,9 +479,9 @@ class Dis2pmVAE(BaseModuleClass):
         zs_concat_acc = torch.cat(zs_acc, dim=-1)
         z_concat_acc = torch.cat([z_shared_acc, zs_concat_acc], dim=-1)
         
-        print(f'output_dict[z_shared_acc] is {z_shared_acc}' )
+        print(f'output_dict[z_shared_acc] is {z_shared_acc.size()}' )
         print(f'output_dict[zs_acc] is {zs_acc}' )
-        print(f'output_dict[library_acc] is {library_acc}' )
+        print(f'output_dict[library_acc] is {library_acc.size()}' )
 
         
         output_dict = {
@@ -504,6 +509,7 @@ class Dis2pmVAE(BaseModuleClass):
 
 
     def _get_generative_input(self, tensors, inference_outputs):
+        print("inside _get_generative_input")
         input_dict = {
             "z_shared": inference_outputs["z_shared"],
             "zs": inference_outputs["zs"],  # a list of all zs
@@ -520,7 +526,7 @@ class Dis2pmVAE(BaseModuleClass):
 
 
     
-    @auto_move_data
+    #@auto_move_data
     def generative(self, 
                    z_shared, zs, library,
                    cat_covs,
@@ -535,12 +541,17 @@ class Dis2pmVAE(BaseModuleClass):
         z = [z_shared] + zs
         z_acc = [z_shared_acc] + zs_acc
 
-        cats_splits = torch.split(cat_covs, 1, dim=1)
+        print(f'cat_covs is {cat_covs.size()}')
+        print(f'cat_covs is {cat_covs}')
+
+        cats_splits = torch.split(cat_covs, 1, dim=1) # returns tuple of tensors where each tensor has the values of a specific covariate
         all_cats_but_one = []
         for i in range(self.zs_num):
             all_cats_but_one.append([cats_splits[j] for j in range(len(cats_splits)) if j != i])
 
         dec_cats_in = [cats_splits] + all_cats_but_one
+        print(f'dec_cats_in is {len(dec_cats_in)}')
+
 
         for dec_count in range(self.zs_num + 1):
             
@@ -550,8 +561,15 @@ class Dis2pmVAE(BaseModuleClass):
             dec_covs = dec_cats_in[dec_count]
             
             # For gene expression
+            print(f'library is : {library.size()}')
+
+
             x_decoder = self.x_decoders_list[dec_count]
             x_decoder_input = z[dec_count]
+            print(f'x_decoder_input is : {x_decoder_input.size()}')
+            print(f'dec_covs is : {len(dec_covs)}')
+            print(f'dec_covs is : {dec_covs}')
+
             px_scale, px_r, px_rate, px_dropout = x_decoder(
                 self.dispersion,
                 x_decoder_input,
@@ -577,13 +595,15 @@ class Dis2pmVAE(BaseModuleClass):
             
             # For accessibility
             x_decoder_acc = self.x_decoders_list_acc[dec_count]
-            print(f'x_decoder_acc is type: {type(x_decoder_acc)}')
-            print(f'x_decoder is type: {type(x_decoder)}')
+            print(f'x_decoder_acc is : {x_decoder_acc}')
+            print(f'x_decoder is : {x_decoder}')
             
             x_decoder_input_acc = z_acc[dec_count]
             
+            print(f'x_decoder_input_acc is : {x_decoder_input_acc.size()}')
             print(f'x_decoder_input_acc is : {x_decoder_input_acc}')
-            print(f'library_acc is : {x_decoder_input_acc}')
+            print(f'dec_covs is : {x_decoder_input_acc}')
+            print(f'library_acc is : {library_acc}')
 
             
             px_acc = x_decoder_acc(

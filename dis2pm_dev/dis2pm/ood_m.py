@@ -6,7 +6,7 @@ from anndata import AnnData
 import scanpy as sc
 
 from .dis2pmvi import Dis2pmVI
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
+device = 'cpu' # 'cuda' if torch.cuda.is_available() else 'cpu'
 
 
 def ood_for_given_covs(
