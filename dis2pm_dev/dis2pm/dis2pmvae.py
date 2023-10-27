@@ -613,7 +613,6 @@ class Dis2pmVAE(BaseModuleClass):
             
             px_acc = x_decoder_acc(
                 x_decoder_input_acc,
-                library_acc,
                 *dec_covs
             )
             
