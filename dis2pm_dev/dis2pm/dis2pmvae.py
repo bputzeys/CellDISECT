@@ -607,7 +607,7 @@ class Dis2pmVAE(BaseModuleClass):
             
             print(f'x_decoder_input_acc is : {x_decoder_input_acc.size()}')
             print(f'x_decoder_input_acc is : {x_decoder_input_acc}')
-            print(f'dec_covs is : {x_decoder_input_acc}')
+            print(f'dec_covs is : {dec_covs}')
             print(f'library_acc is : {library_acc}')
 
             
