@@ -120,6 +120,8 @@ class Dis2pmVAE(BaseModuleClass):
         
         print(n_input_genes)
         print("debug4")
+        print(f'n_cats_per_cov is {n_cats_per_cov}')
+
         print("debug4")
         n_input_encoder_g = n_input_genes
         print("debug5")
@@ -345,6 +347,8 @@ class Dis2pmVAE(BaseModuleClass):
 
             
     def _get_inference_input(self, tensors):
+        
+        print("inside _get_inference_input")
 
         cat_key = REGISTRY_KEYS.CAT_COVS_KEY
         cat_covs = tensors[cat_key]
@@ -532,6 +536,7 @@ class Dis2pmVAE(BaseModuleClass):
                    cat_covs,
                    z_shared_acc, zs_acc, library_acc,
                    ):
+        print("\n inside generative")
 
         output_dict = {"px": [],  
                        "px_acc": [] }
@@ -553,7 +558,7 @@ class Dis2pmVAE(BaseModuleClass):
         print(f'dec_cats_in is {len(dec_cats_in)}')
 
 
-        for dec_count in range(self.zs_num + 1):
+        for dec_count in range( self.zs_num + 1):  ### just for debugging set to range(1, self.zs_num + 1)
             
             print(f'px_acc in the start of loop is {output_dict["px_acc"]}')
             print(f'px in the start of loop is {output_dict["px"]}')
