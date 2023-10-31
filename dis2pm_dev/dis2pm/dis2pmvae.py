@@ -348,7 +348,7 @@ class Dis2pmVAE(BaseModuleClass):
             
     def _get_inference_input(self, tensors):
         
-        print("inside _get_inference_input")
+        #print("inside _get_inference_input")
 
         cat_key = REGISTRY_KEYS.CAT_COVS_KEY
         cat_covs = tensors[cat_key]
@@ -370,7 +370,7 @@ class Dis2pmVAE(BaseModuleClass):
                   nullify_shared: Optional[bool] = False,
                   ):
         
-        print("inside inference")
+        #print("inside inference")
         # split count vector x into rna count and atac count        
 
         if self.n_input_genes == 0:
@@ -413,8 +413,8 @@ class Dis2pmVAE(BaseModuleClass):
 
         # z_shared, z_shared_acc: qz is the distribution, z is a sample from it
         
-        print(f'print {self.z_encoders_list[0]}')
-        print(f'print {self.z_encoders_list[1]}')
+        #print(f'print {self.z_encoders_list[0]}')
+        #print(f'print {self.z_encoders_list[1]}')
 
         qz_shared, z_shared = self.z_encoders_list[0](x_, *cat_in)
         z_shared = z_shared.to(device)
@@ -483,9 +483,9 @@ class Dis2pmVAE(BaseModuleClass):
         zs_concat_acc = torch.cat(zs_acc, dim=-1)
         z_concat_acc = torch.cat([z_shared_acc, zs_concat_acc], dim=-1)
         
-        print(f'output_dict[z_shared_acc] is {z_shared_acc.size()}' )
-        print(f'output_dict[zs_acc] is {zs_acc}' )
-        print(f'output_dict[library_acc] is {library_acc.size()}' )
+        #print(f'output_dict[z_shared_acc] is {z_shared_acc.size()}' )
+        #print(f'output_dict[zs_acc] is {zs_acc}' )
+        #print(f'output_dict[library_acc] is {library_acc.size()}' )
 
         
         output_dict = {
@@ -513,7 +513,7 @@ class Dis2pmVAE(BaseModuleClass):
 
 
     def _get_generative_input(self, tensors, inference_outputs):
-        print("inside _get_generative_input")
+        #print("inside _get_generative_input")
         input_dict = {
             "z_shared": inference_outputs["z_shared"],
             "zs": inference_outputs["zs"],  # a list of all zs
@@ -536,18 +536,18 @@ class Dis2pmVAE(BaseModuleClass):
                    cat_covs,
                    z_shared_acc, zs_acc, library_acc,
                    ):
-        print("\n inside generative")
+        #print("\n inside generative")
 
         output_dict = {"px": [],  
                        "px_acc": [] }
         
-        print(f'px_acc is {output_dict["px_acc"]}')
+        #print(f'px_acc is {output_dict["px_acc"]}')
 
         z = [z_shared] + zs
         z_acc = [z_shared_acc] + zs_acc
 
-        print(f'cat_covs is {cat_covs.size()}')
-        print(f'cat_covs is {cat_covs}')
+        #print(f'cat_covs is {cat_covs.size()}')
+        #print(f'cat_covs is {cat_covs}')
 
         cats_splits = torch.split(cat_covs, 1, dim=1) # returns tuple of tensors where each tensor has the values of a specific covariate
         all_cats_but_one = []
@@ -555,25 +555,25 @@ class Dis2pmVAE(BaseModuleClass):
             all_cats_but_one.append([cats_splits[j] for j in range(len(cats_splits)) if j != i])
 
         dec_cats_in = [cats_splits] + all_cats_but_one
-        print(f'dec_cats_in is {len(dec_cats_in)}')
+        #print(f'dec_cats_in is {len(dec_cats_in)}')
 
 
         for dec_count in range( self.zs_num + 1):  ### just for debugging set to range(1, self.zs_num + 1)
             
-            print(f'px_acc in the start of loop is {output_dict["px_acc"]}')
-            print(f'px in the start of loop is {output_dict["px"]}')
+            #print(f'px_acc in the start of loop is {output_dict["px_acc"]}')
+            #print(f'px in the start of loop is {output_dict["px"]}')
 
             dec_covs = dec_cats_in[dec_count]
             
             # For gene expression
-            print(f'library is : {library.size()}')
+            #print(f'library is : {library.size()}')
 
 
             x_decoder = self.x_decoders_list[dec_count]
             x_decoder_input = z[dec_count]
-            print(f'x_decoder_input is : {x_decoder_input.size()}')
-            print(f'dec_covs is : {len(dec_covs)}')
-            print(f'dec_covs is : {dec_covs}')
+            #print(f'x_decoder_input is : {x_decoder_input.size()}')
+            #print(f'dec_covs is : {len(dec_covs)}')
+            #print(f'dec_covs is : {dec_covs}')
 
             px_scale, px_r, px_rate, px_dropout = x_decoder(
                 self.dispersion,
@@ -600,15 +600,15 @@ class Dis2pmVAE(BaseModuleClass):
             
             # For accessibility
             x_decoder_acc = self.x_decoders_list_acc[dec_count]
-            print(f'x_decoder_acc is : {x_decoder_acc}')
-            print(f'x_decoder is : {x_decoder}')
+            #print(f'x_decoder_acc is : {x_decoder_acc}')
+            #print(f'x_decoder is : {x_decoder}')
             
             x_decoder_input_acc = z_acc[dec_count]
             
-            print(f'x_decoder_input_acc is : {x_decoder_input_acc.size()}')
-            print(f'x_decoder_input_acc is : {x_decoder_input_acc}')
-            print(f'dec_covs is : {dec_covs}')
-            print(f'library_acc is : {library_acc}')
+            #print(f'x_decoder_input_acc is : {x_decoder_input_acc.size()}')
+            #print(f'x_decoder_input_acc is : {x_decoder_input_acc}')
+            #print(f'dec_covs is : {dec_covs}')
+            #print(f'library_acc is : {library_acc}')
 
             
             px_acc = x_decoder_acc(
@@ -618,8 +618,8 @@ class Dis2pmVAE(BaseModuleClass):
             
             output_dict["px_acc"] += [px_acc]  
             
-            print(f'px in the end of loop is {output_dict["px"]}')
-            print(f'px_acc in the end of loop is {output_dict["px_acc"]}')
+            #print(f'px in the end of loop is {output_dict["px"]}')
+            #print(f'px_acc in the end of loop is {output_dict["px_acc"]}')
 
             
 
@@ -643,7 +643,7 @@ class Dis2pmVAE(BaseModuleClass):
         detach_z
 
         """
-        print("inside sub_forward")
+        #print("inside sub_forward")
         x_ = x
         if detach_x:
             x_ = x.detach()
@@ -715,6 +715,26 @@ class Dis2pmVAE(BaseModuleClass):
         f1 = sum(f1_scores) / len(f1_scores)
 
         return ce_loss_sum, accuracy, f1
+    
+    def get_reconstruction_loss_accessibility(self, x, p, d):
+        """Computes the reconstruction loss for the accessibility data."""
+        #reg_factor = (
+        #    torch.sigmoid(self.region_factors) if self.region_factors is not None else 1
+        #)
+        print(f'the p is {p}')
+        print(f'the d is {d}')
+        d_unlist = [item[0] for item in d]
+        print(f'the d size is {d.size()}')
+        print(f'the p[1] size is {p[1].size()}')
+        print(f'the len(p) is {len(p)}')
+
+        print(f'the d_unlist is {d_unlist}')
+
+        return torch.nn.BCELoss(reduction="none")(
+            p * d , (x > 0).float()
+        ).sum(dim=-1)
+    
+    
 
     def loss(
             self,
@@ -727,20 +747,37 @@ class Dis2pmVAE(BaseModuleClass):
             n_cf: Tunable[int],  # number of X_cf recons (X_cf = a random permutation of X)
             kl_weight: float = 1.0,
     ):
-        # reconstruction loss X
-        print("inside loss")
+        #print("inside loss")
 
         x = tensors[REGISTRY_KEYS.X_KEY]
         
         x_rna = x[:, : self.n_input_genes]
         x_chr = x[:, self.n_input_genes : (self.n_input_genes + self.n_input_regions)]
 
-        print(generative_outputs["px"])
-        print("\n")
-        print("now the accessibility")
-        print(generative_outputs["px_acc"])
-        print("\n")
-        print(generative_outputs)
+        #print(generative_outputs["px"])
+        #print("\n")
+        #print("now the accessibility")
+        #print(generative_outputs["px_acc"])
+        #print("\n")
+        #print(generative_outputs)
+
+        # ATAC Loss --------------------------------------------
+        
+        # ATAC Reconstruction loss
+        px_acc = generative_outputs["px_acc"]
+        libsize_acc = inference_outputs["library_acc"]
+        
+        reconst_loss_x_list_acc = [ 
+            self.get_reconstruction_loss_accessibility(x_chr, px_acc, libsize_acc)
+            for px_acc in generative_outputs["px_acc"]
+        ]
+        reconst_loss_x_acc = sum(reconst_loss_x_list_acc)
+                
+
+        
+        # Gene expression Loss ---------------------------------
+        
+        # reconstruction loss X
 
         reconst_loss_x_list = [-torch.mean(px.log_prob(x_rna).sum(-1)) for px in generative_outputs["px"]]
         reconst_loss_x_dict = {'x_' + str(i): reconst_loss_x_list[i] for i in range(len(reconst_loss_x_list))}
