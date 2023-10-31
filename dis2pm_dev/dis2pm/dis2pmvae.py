@@ -723,6 +723,8 @@ class Dis2pmVAE(BaseModuleClass):
         #)
         print(f'the p is {p}')
         print(f'the d is {d}')
+        print(f'the x is {x}')
+        print(f'the x size is {x.size()}')
         d_unlist = [item[0] for item in d]
         print(f'the d size is {d.size()}')
         print(f'the p[1] size is {p[1].size()}')
@@ -753,6 +755,8 @@ class Dis2pmVAE(BaseModuleClass):
         
         x_rna = x[:, : self.n_input_genes]
         x_chr = x[:, self.n_input_genes : (self.n_input_genes + self.n_input_regions)]
+        
+        print(f'x_chr is {x_chr}')
 
         #print(generative_outputs["px"])
         #print("\n")
