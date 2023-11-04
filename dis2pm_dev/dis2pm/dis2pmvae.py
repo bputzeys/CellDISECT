@@ -633,7 +633,7 @@ class Dis2pmVAE(BaseModuleClass):
                     detach_z=False):
         """
 
-        performs forward (inference + generative) only on enc/dec idx for both gene expression and accessibility
+        performs forward (inference + generative) only on enc/dec idx for gene expression
 
         Parameters
         ----------
@@ -684,7 +684,50 @@ class Dis2pmVAE(BaseModuleClass):
         elif self.gene_likelihood == "poisson":
             px = Poisson(px_rate, scale=px_scale)
             
-      
+        return px
+
+    
+    def sub_forward_acc(self, idx,
+                    x, cat_covs,
+                    detach_x=False,
+                    detach_z=False):
+        """
+
+        performs forward (inference + generative) only on enc/dec idx for accessibility
+
+        Parameters
+        ----------
+        idx
+            index of enc/dec in [1, ..., self.zs_num]
+        x
+        cat_covs
+        detach_x
+        detach_z
+
+        """
+        
+        x_ = x
+        if detach_x:
+            x_ = x.detach()
+
+        library = torch.ones(x_.size(dim=0) ) 
+
+        cat_in = torch.split(cat_covs, 1, dim=1)
+
+        qz, z = (self.z_encoders_list_acc[idx](x_, *cat_in))
+        if detach_z:
+            z = z.detach()
+
+        dec_cats = [cat_in[j] for j in range(len(cat_in)) if j != idx-1]
+
+        x_decoder = self.x_decoders_list_acc[idx]
+
+        px_scale, px_r, px_rate, px_dropout = x_decoder(
+            self.dispersion,
+            z,
+            library,
+            *dec_cats
+        )       
 
         return px
     
