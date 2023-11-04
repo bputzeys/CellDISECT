@@ -683,8 +683,12 @@ class Dis2pmVAE(BaseModuleClass):
             px = NegativeBinomial(mu=px_rate, theta=px_r, scale=px_scale)
         elif self.gene_likelihood == "poisson":
             px = Poisson(px_rate, scale=px_scale)
+            
+      
 
         return px
+    
+    
 
     def classification_logits(self, inference_outputs):
         zs = inference_outputs["zs"]
@@ -840,12 +844,12 @@ class Dis2pmVAE(BaseModuleClass):
 
         kl_z_dict_acc = {'z_acc_' + str(i+1): kl_z_list_acc[i] for i in range(len(kl_z_list_acc))}
 
-#         # ATAC classification metrics: CE, ACC, F1
-#         print("ATAC classification metrics: CE, ACC, F1 ")
+        # ATAC classification metrics: CE, ACC, F1
+        print("ATAC classification metrics: CE, ACC, F1 ")
 
-#         logits = self.classification_logits(inference_outputs)
-#         ce_loss_sum, accuracy, f1 = self.compute_clf_metrics(logits, cat_covs)
-#         ce_loss_mean = ce_loss_sum / len(range(self.zs_num))        
+        logits_acc = self.classification_logits_acc(inference_outputs)
+        ce_loss_sum_acc, accuracy_acc, f1_acc = self.compute_clf_metrics(logits_acc, cat_covs)
+        ce_loss_mean_acc = ce_loss_sum_acc / len(range(self.zs_num))        
         
         
         
@@ -920,8 +924,10 @@ class Dis2pmVAE(BaseModuleClass):
                reconst_loss_x_cf * cf_weight + \
                sum(kl_z_list) * kl_weight * beta + \
                ce_loss_sum * clf_weight + \
-               reconst_loss_x_acc 
-        
+               reconst_loss_x_acc + \
+               reconst_loss_x_cf_acc * cf_weight + \
+               sum(kl_z_list_acc) * kl_weight * beta #+ \
+               ce_loss_sum_acc * clf_weight + \        
 
         loss_dict = {
             LOSS_KEYS.LOSS: loss,
@@ -930,7 +936,14 @@ class Dis2pmVAE(BaseModuleClass):
             LOSS_KEYS.KL_Z: kl_z_dict,
             LOSS_KEYS.CLASSIFICATION_LOSS: ce_loss_mean,
             LOSS_KEYS.ACCURACY: accuracy,
-            LOSS_KEYS.F1: f1
+            LOSS_KEYS.F1: f1,
+            
+            LOSS_KEYS.RECONST_LOSS_X_ACC: reconst_loss_x_dict_acc,
+            LOSS_KEYS.RECONST_LOSS_X_CF_ACC: reconst_loss_x_cf_acc,
+            LOSS_KEYS.KL_Z_ACC: kl_z_dict_acc,
+            LOSS_KEYS.CLASSIFICATION_LOSS_ACC: ce_loss_mean_acc,
+            LOSS_KEYS.ACCURACY_ACC: accuracy_acc,
+            LOSS_KEYS.F1_ACC: f1_acc
         }
 
         return loss_dict
