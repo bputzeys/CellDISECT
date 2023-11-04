@@ -402,13 +402,14 @@ class Dis2pmVAE(BaseModuleClass):
         # print(f'x_r is {x_r}')
         
         # log-transform the RNA
-        library = torch.log(x.sum(1)).unsqueeze(1)
+        library = torch.log(x_.sum(1)).unsqueeze(1)
         #print(f'{library.size()}'+' is the size of library' )
         if self.log_variational:
             x_ = torch.log(1 + x_)
             
         # library_acc
-        library_acc = torch.ones_like(torch.unsqueeze(x.sum(1),1) ) #torch.unsqueeze(x.sum(1),1) 
+        batch_size = x.size(dim=0)
+        library_acc = torch.ones( batch_size ) #torch.unsqueeze(x.sum(1),1) 
 
         cat_in = torch.split(cat_covs, 1, dim=1)
 
