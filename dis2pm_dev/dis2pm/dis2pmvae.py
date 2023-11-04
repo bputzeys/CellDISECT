@@ -363,7 +363,7 @@ class Dis2pmVAE(BaseModuleClass):
     
 
     
-    #@auto_move_data
+    @auto_move_data
     def inference(self, x,
                   cat_covs,
                   nullify_cat_covs_indices: Optional[List[int]] = None,
@@ -531,7 +531,7 @@ class Dis2pmVAE(BaseModuleClass):
 
 
     
-    #@auto_move_data
+    @auto_move_data
     def generative(self, 
                    z_shared, zs, library,
                    cat_covs,
