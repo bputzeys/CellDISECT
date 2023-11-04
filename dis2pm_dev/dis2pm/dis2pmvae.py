@@ -399,6 +399,7 @@ class Dis2pmVAE(BaseModuleClass):
 
         x_ = x_rna
         x_r = x_chr
+        # print(f'x_r is {x_r}')
         
         # log-transform the RNA
         library = torch.log(x.sum(1)).unsqueeze(1)
@@ -407,7 +408,7 @@ class Dis2pmVAE(BaseModuleClass):
             x_ = torch.log(1 + x_)
             
         # library_acc
-        library_acc = torch.unsqueeze(x.sum(1),1) 
+        library_acc = torch.ones_like(torch.unsqueeze(x.sum(1),1) ) #torch.unsqueeze(x.sum(1),1) 
 
         cat_in = torch.split(cat_covs, 1, dim=1)
 
@@ -721,16 +722,17 @@ class Dis2pmVAE(BaseModuleClass):
         #reg_factor = (
         #    torch.sigmoid(self.region_factors) if self.region_factors is not None else 1
         #)
-        print(f'the p is {p}')
-        print(f'the d is {d}')
-        print(f'the x is {x}')
-        print(f'the x size is {x.size()}')
-        d_unlist = [item[0] for item in d]
-        print(f'the d size is {d.size()}')
-        print(f'the p[1] size is {p[1].size()}')
-        print(f'the len(p) is {len(p)}')
+        
+#         print(f'the p is {p}')
+#         print(f'the d is {d}')
+#         print(f'the x is {x}')
+#         print(f'the x size is {x.size()}')
+#         d_unlist = [item[0] for item in d]
+#         print(f'the d size is {d.size()}')
+#         print(f'the p[1] size is {p[1].size()}')
+#         print(f'the len(p) is {len(p)}')
 
-        print(f'the d_unlist is {d_unlist}')
+#         print(f'the d_unlist is {d_unlist}')
 
         return torch.nn.BCELoss(reduction="none")(
             p * d , (x > 0).float()
@@ -756,7 +758,7 @@ class Dis2pmVAE(BaseModuleClass):
         x_rna = x[:, : self.n_input_genes]
         x_chr = x[:, self.n_input_genes : (self.n_input_genes + self.n_input_regions)]
         
-        print(f'x_chr is {x_chr}')
+        # print(f'x_chr is {x_chr}')
 
         #print(generative_outputs["px"])
         #print("\n")
