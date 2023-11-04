@@ -238,6 +238,8 @@ class Dis2pmVI(
             batch_size: Optional[int] = None,
             nullify_cat_covs_indices: Optional[List[int]] = None,
             nullify_shared: Optional[bool] = False
+            nullify_cat_covs_indices_acc: Optional[List[int]] = None,
+            nullify_shared_acc: Optional[bool] = False
     ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
         """
         Parameters
