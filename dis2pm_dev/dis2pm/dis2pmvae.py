@@ -696,6 +696,16 @@ class Dis2pmVAE(BaseModuleClass):
 
         return logits
 
+    def classification_logits_acc(self, inference_outputs):
+        zs = inference_outputs["zs_acc"]
+        logits = []
+        for i in range(self.zs_num):
+            s_i_classifier = self.s_classifiers_list_acc[i]
+            logits_i = s_i_classifier(zs[i])
+            logits += [logits_i]
+
+        return logits
+    
     def compute_clf_metrics(self, logits, cat_covs):
         # CE, ACC, F1
         cats = torch.split(cat_covs, 1, dim=1)
@@ -780,7 +790,69 @@ class Dis2pmVAE(BaseModuleClass):
         ]
         reconst_loss_x_acc = sum(reconst_loss_x_list_acc)
                 
+        # ATAC reconstruction loss X'
+        print("ATAC reconstruction loss X' ")
 
+        cat_covs = tensors[REGISTRY_KEYS.CAT_COVS_KEY]
+        batch_size = x.size(dim=0)
+
+        reconst_loss_x_cf_list_acc = []
+
+        for _ in range(n_cf):
+
+            # choose a random permutation of X as X_cf
+
+            idx_shuffled = list(range(batch_size))
+            random.shuffle(idx_shuffled)
+            idx_shuffled = torch.tensor(idx_shuffled).to(device)
+
+            x_ = x_chr
+            x_cf_acc = torch.index_select(x_chr, 0, idx_shuffled).to(device)
+
+            cat_cov_ = cat_covs
+            cat_cov_cf = torch.index_select(cat_covs, 0, idx_shuffled).to(device)
+            cat_cov_cf_split = torch.split(cat_cov_cf, 1, dim=1)
+
+            # a random ordering for diffusing through n VAEs
+
+            perm = list(range(self.zs_num))
+            random.shuffle(perm)
+
+            for idx in perm:
+                # cat_cov_[idx] (possibly) changes to cat_cov_cf[idx]
+                cat_cov_split = list(torch.split(cat_cov_, 1, dim=1))
+                cat_cov_split[idx] = cat_cov_cf_split[idx]
+                cat_cov_ = torch.cat(cat_cov_split, dim=1)
+                # use enc/dec idx+1 to get px_ and feed px_.mean as the next x_
+                px_ = self.sub_forward(idx + 1, x_, cat_cov_)
+                x_ = px_.mean
+
+            reconst_loss_x_cf_list_acc.append(-torch.mean(px_.log_prob(x_cf_acc).sum(-1)))
+
+        reconst_loss_x_cf_acc = sum(reconst_loss_x_cf_list_acc) / n_cf
+        
+        
+        # ATAC KL divergence Z
+        print("ATAC KL divergence Z ")
+
+        kl_z_list_acc = [torch.mean(kl(qzs_acc, qzs_prior_acc).sum(dim=1)) for qzs_acc, qzs_prior_acc in
+                     zip(inference_outputs["qzs_acc"], inference_outputs["qzs_prior_acc"])]
+
+        kl_z_dict_acc = {'z_acc_' + str(i+1): kl_z_list_acc[i] for i in range(len(kl_z_list_acc))}
+
+#         # ATAC classification metrics: CE, ACC, F1
+#         print("ATAC classification metrics: CE, ACC, F1 ")
+
+#         logits = self.classification_logits(inference_outputs)
+#         ce_loss_sum, accuracy, f1 = self.compute_clf_metrics(logits, cat_covs)
+#         ce_loss_mean = ce_loss_sum / len(range(self.zs_num))        
+        
+        
+        
+        
+        
+        
+        
         
         # Gene expression Loss ---------------------------------
         
@@ -792,8 +864,8 @@ class Dis2pmVAE(BaseModuleClass):
 
         # reconstruction loss X'
 
-        cat_covs = tensors[REGISTRY_KEYS.CAT_COVS_KEY]
-        batch_size = x.size(dim=0)
+        # cat_covs = tensors[REGISTRY_KEYS.CAT_COVS_KEY]
+        # batch_size = x.size(dim=0)
 
         reconst_loss_x_cf_list = []
 
