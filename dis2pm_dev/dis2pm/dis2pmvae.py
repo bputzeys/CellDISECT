@@ -846,7 +846,9 @@ class Dis2pmVAE(BaseModuleClass):
         loss = reconst_loss_x + \
                reconst_loss_x_cf * cf_weight + \
                sum(kl_z_list) * kl_weight * beta + \
-               ce_loss_sum * clf_weight
+               ce_loss_sum * clf_weight + \
+               reconst_loss_x_acc 
+        
 
         loss_dict = {
             LOSS_KEYS.LOSS: loss,
