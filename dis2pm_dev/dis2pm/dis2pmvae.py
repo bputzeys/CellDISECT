@@ -791,9 +791,12 @@ class Dis2pmVAE(BaseModuleClass):
 #         print(f'the len(p) is {len(p)}')
 
 #         print(f'the d_unlist is {d_unlist}')
+        print(f'the p size is {p.size()}')
+        print(f'the x size is {x.size()}')
 
         return torch.nn.BCELoss(reduction="none")(
-            p * d , (x > 0).float()
+            #p * d , (x > 0).float()
+            p  , (x > 0).float()
         ).sum(dim=-1)
     
     
@@ -871,7 +874,7 @@ class Dis2pmVAE(BaseModuleClass):
                 cat_cov_split[idx] = cat_cov_cf_split[idx]
                 cat_cov_ = torch.cat(cat_cov_split, dim=1)
                 # use enc/dec idx+1 to get px_ and feed px_.mean as the next x_
-                px_ = self.sub_forward(idx + 1, x_, cat_cov_)
+                px_ = self.sub_forward_acc(idx + 1, x_, cat_cov_)
                 x_ = px_.mean
 
             reconst_loss_x_cf_list_acc.append(-torch.mean(px_.log_prob(x_cf_acc).sum(-1)))
@@ -969,8 +972,8 @@ class Dis2pmVAE(BaseModuleClass):
                ce_loss_sum * clf_weight + \
                reconst_loss_x_acc + \
                reconst_loss_x_cf_acc * cf_weight + \
-               sum(kl_z_list_acc) * kl_weight * beta #+ \
-               ce_loss_sum_acc * clf_weight + \        
+               sum(kl_z_list_acc) * kl_weight * beta + \
+               ce_loss_sum_acc * clf_weight #+ \        
 
         loss_dict = {
             LOSS_KEYS.LOSS: loss,
