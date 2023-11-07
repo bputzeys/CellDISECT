@@ -709,27 +709,31 @@ class Dis2pmVAE(BaseModuleClass):
         x_ = x
         if detach_x:
             x_ = x.detach()
+        print("detached x")
 
-        library = torch.ones(x_.size(dim=0) ) 
+        #library = torch.ones(x_.size(dim=0) ) 
 
         cat_in = torch.split(cat_covs, 1, dim=1)
+        print("torch.split ")
 
         qz, z = (self.z_encoders_list_acc[idx](x_, *cat_in))
         if detach_z:
             z = z.detach()
+        print("detached z")
 
         dec_cats = [cat_in[j] for j in range(len(cat_in)) if j != idx-1]
+        print("dec_cats ")
 
-        x_decoder = self.x_decoders_list_acc[idx]
+        x_decoder_acc = self.x_decoders_list_acc[idx]
+        print("x_decoder ")
 
-        px_scale, px_r, px_rate, px_dropout = x_decoder(
-            self.dispersion,
+        px_acc = x_decoder_acc(
             z,
-            library,
             *dec_cats
         )       
+        print("x_decoder 2")
 
-        return px
+        return px_acc
     
     
 
@@ -867,6 +871,7 @@ class Dis2pmVAE(BaseModuleClass):
 
             perm = list(range(self.zs_num))
             random.shuffle(perm)
+            
 
             for idx in perm:
                 # cat_cov_[idx] (possibly) changes to cat_cov_cf[idx]
@@ -874,10 +879,15 @@ class Dis2pmVAE(BaseModuleClass):
                 cat_cov_split[idx] = cat_cov_cf_split[idx]
                 cat_cov_ = torch.cat(cat_cov_split, dim=1)
                 # use enc/dec idx+1 to get px_ and feed px_.mean as the next x_
-                px_ = self.sub_forward_acc(idx + 1, x_, cat_cov_)
-                x_ = px_.mean
+                
+                print(f'idx + 1 = {idx + 1}')
+                print(f'x_ = {x_}')
+                print(f'cat_cov_ = {cat_cov_}')               
 
-            reconst_loss_x_cf_list_acc.append(-torch.mean(px_.log_prob(x_cf_acc).sum(-1)))
+                px_acc = self.sub_forward_acc(idx + 1, x=x_, cat_covs=cat_cov_)
+                x_ = px_acc
+
+            reconst_loss_x_cf_list_acc.append(  self.get_reconstruction_loss_accessibility(x_cf_acc, px_acc, libsize_acc)        )
 
         reconst_loss_x_cf_acc = sum(reconst_loss_x_cf_list_acc) / n_cf
         
