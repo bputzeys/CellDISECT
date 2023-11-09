@@ -22,7 +22,6 @@ class LOSS_KEYS(str, Enum):
     ACCURACY = "acc"
     F1 = "f1"
 
-    LOSS_ACC = "loss_atac"
     RECONST_LOSS_X_ACC = "rec_x_atac"
     RECONST_LOSS_X_CF_ACC = "rec_x_cf_atac"
     KL_Z_ACC = "kl_z_atac"
@@ -39,7 +38,6 @@ LOSS_KEYS_LIST = [
     LOSS_KEYS.ACCURACY,
     LOSS_KEYS.F1,
     
-    LOSS_KEYS.LOSS_ACC,
     LOSS_KEYS.RECONST_LOSS_X_ACC,
     LOSS_KEYS.RECONST_LOSS_X_CF_ACC,
     LOSS_KEYS.KL_Z_ACC,

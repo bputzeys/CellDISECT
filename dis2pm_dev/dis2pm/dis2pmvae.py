@@ -982,7 +982,6 @@ class Dis2pmVAE(BaseModuleClass):
         ce_loss_mean = ce_loss_sum / len(range(self.zs_num))
 
         # total loss
-        print("total loss ")
         print(f'reconst_loss_x_dict_acc is {reconst_loss_x_dict_acc}')
         print(f'reconst_loss_x_dict is {reconst_loss_x_dict}')
 
@@ -993,16 +992,29 @@ class Dis2pmVAE(BaseModuleClass):
                reconst_loss_x_acc + \
                reconst_loss_x_cf_acc * cf_weight + \
                sum(kl_z_list_acc) * kl_weight * beta + \
-               ce_loss_sum_acc * clf_weight #+ \        
+               ce_loss_sum_acc * clf_weight #+ \ 
+        
+        print(f'total loss is {loss}')
+        print(f'reconst_loss_x is {reconst_loss_x}')
+        print(f'reconst_loss_x_cf is {reconst_loss_x_cf}')
+        print(f'sum(kl_z_list) is {sum(kl_z_list)}')
+        print(f'ce_loss_sum is {ce_loss_sum}')
+        print(f'reconst_loss_x_acc is {reconst_loss_x_acc}')
+        print(f'reconst_loss_x_cf_acc is {reconst_loss_x_cf_acc}')
+        print(f'sum(kl_z_list_acc) is {sum(kl_z_list_acc)}')
+        print(f'ce_loss_sum_acc is {ce_loss_sum_acc}')
+
 
         loss_dict = {
             LOSS_KEYS.LOSS: loss,
+            
             LOSS_KEYS.RECONST_LOSS_X: reconst_loss_x_dict,
             LOSS_KEYS.RECONST_LOSS_X_CF: reconst_loss_x_cf,
             LOSS_KEYS.KL_Z: kl_z_dict,
             LOSS_KEYS.CLASSIFICATION_LOSS: ce_loss_mean,
             LOSS_KEYS.ACCURACY: accuracy,
-            LOSS_KEYS.F1: f1,            
+            LOSS_KEYS.F1: f1, 
+            
             LOSS_KEYS.RECONST_LOSS_X_ACC: reconst_loss_x_dict_acc,
             LOSS_KEYS.RECONST_LOSS_X_CF_ACC: reconst_loss_x_cf_acc,
             LOSS_KEYS.KL_Z_ACC: kl_z_dict_acc,
