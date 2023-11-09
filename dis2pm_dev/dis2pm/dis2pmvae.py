@@ -889,8 +889,9 @@ class Dis2pmVAE(BaseModuleClass):
                 px_acc = self.sub_forward_acc(idx + 1, x=x_, cat_covs=cat_cov_)
                 x_ = px_acc
 
-            reconst_loss_x_cf_list_acc.append(  self.get_reconstruction_loss_accessibility(x_cf_acc, px_acc, libsize_acc)        )
+            reconst_loss_x_cf_list_acc.append(  self.get_reconstruction_loss_accessibility(x_cf_acc, px_acc, libsize_acc).sum(-1)        )
 
+        print(f'reconst_loss_x_cf_list_acc before sum is {reconst_loss_x_cf_list_acc}')
         reconst_loss_x_cf_acc = sum(reconst_loss_x_cf_list_acc) / n_cf
         
         
@@ -963,7 +964,8 @@ class Dis2pmVAE(BaseModuleClass):
                 x_ = px_.mean
 
             reconst_loss_x_cf_list.append(-torch.mean(px_.log_prob(x_cf).sum(-1)))
-
+            
+        print(f'reconst_loss_x_cf_list before sum is {reconst_loss_x_cf_list}')
         reconst_loss_x_cf = sum(reconst_loss_x_cf_list) / n_cf
 
         # KL divergence Z
