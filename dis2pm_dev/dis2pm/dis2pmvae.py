@@ -839,10 +839,12 @@ class Dis2pmVAE(BaseModuleClass):
         libsize_acc = inference_outputs["library_acc"]
         
         reconst_loss_x_list_acc = [ 
-            self.get_reconstruction_loss_accessibility(x_chr, px_acc, libsize_acc)
+            torch.mean(self.get_reconstruction_loss_accessibility(x_chr, px_acc, libsize_acc))
             for px_acc in generative_outputs["px_acc"]
         ]
+        reconst_loss_x_dict_acc = {'atac_' + str(i): reconst_loss_x_list_acc[i] for i in range(len(reconst_loss_x_list_acc))}
         reconst_loss_x_acc = sum(reconst_loss_x_list_acc)
+        
                 
         # ATAC reconstruction loss X'
         print("ATAC reconstruction loss X' ")
@@ -917,12 +919,14 @@ class Dis2pmVAE(BaseModuleClass):
         # Gene expression Loss ---------------------------------
         
         # reconstruction loss X
+        print("GEX reconstruction loss X ")
 
         reconst_loss_x_list = [-torch.mean(px.log_prob(x_rna).sum(-1)) for px in generative_outputs["px"]]
         reconst_loss_x_dict = {'x_' + str(i): reconst_loss_x_list[i] for i in range(len(reconst_loss_x_list))}
         reconst_loss_x = sum(reconst_loss_x_list)
 
         # reconstruction loss X'
+        print("GEX reconstruction loss X cf ")
 
         # cat_covs = tensors[REGISTRY_KEYS.CAT_COVS_KEY]
         # batch_size = x.size(dim=0)
@@ -963,6 +967,7 @@ class Dis2pmVAE(BaseModuleClass):
         reconst_loss_x_cf = sum(reconst_loss_x_cf_list) / n_cf
 
         # KL divergence Z
+        print("GEX reconstruction loss KL divergence Z ")
 
         kl_z_list = [torch.mean(kl(qzs, qzs_prior).sum(dim=1)) for qzs, qzs_prior in
                      zip(inference_outputs["qzs"], inference_outputs["qzs_prior"])]
@@ -970,12 +975,17 @@ class Dis2pmVAE(BaseModuleClass):
         kl_z_dict = {'z_' + str(i+1): kl_z_list[i] for i in range(len(kl_z_list))}
 
         # classification metrics: CE, ACC, F1
+        print("GEX classification metrics: CE, ACC, F1 ")
 
         logits = self.classification_logits(inference_outputs)
         ce_loss_sum, accuracy, f1 = self.compute_clf_metrics(logits, cat_covs)
         ce_loss_mean = ce_loss_sum / len(range(self.zs_num))
 
         # total loss
+        print("total loss ")
+        print(f'reconst_loss_x_dict_acc is {reconst_loss_x_dict_acc}')
+        print(f'reconst_loss_x_dict is {reconst_loss_x_dict}')
+
         loss = reconst_loss_x + \
                reconst_loss_x_cf * cf_weight + \
                sum(kl_z_list) * kl_weight * beta + \
@@ -992,8 +1002,7 @@ class Dis2pmVAE(BaseModuleClass):
             LOSS_KEYS.KL_Z: kl_z_dict,
             LOSS_KEYS.CLASSIFICATION_LOSS: ce_loss_mean,
             LOSS_KEYS.ACCURACY: accuracy,
-            LOSS_KEYS.F1: f1,
-            
+            LOSS_KEYS.F1: f1,            
             LOSS_KEYS.RECONST_LOSS_X_ACC: reconst_loss_x_dict_acc,
             LOSS_KEYS.RECONST_LOSS_X_CF_ACC: reconst_loss_x_cf_acc,
             LOSS_KEYS.KL_Z_ACC: kl_z_dict_acc,
