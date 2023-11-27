@@ -122,9 +122,9 @@ class Dis2pmVAE(BaseModuleClass):
         print("debug4")
         print(f'n_cats_per_cov is {n_cats_per_cov}')
 
-        print("debug4")
+        # print("debug4")
         n_input_encoder_g = n_input_genes
-        print("debug5")
+        # print("debug5")
 
         self.z_encoders_list = nn.ModuleList(
             [
@@ -189,7 +189,7 @@ class Dis2pmVAE(BaseModuleClass):
         # Encoders for regions
 
         n_input_encoder_r = n_input_regions
-        print(n_input_encoder_r)
+        # print(n_input_encoder_r)
 
         self.z_encoders_list_acc = nn.ModuleList(
             [
@@ -474,10 +474,12 @@ class Dis2pmVAE(BaseModuleClass):
 
         if nullify_shared:
             z_shared = torch.zeros_like(z_shared).to(device)
+            z_shared_acc = torch.zeros_like(z_shared_acc).to(device)
 
         for i in range(self.zs_num):
             if i in nullify_cat_covs_indices:
                 zs[i] = torch.zeros_like(zs[i]).to(device)
+                zs_acc[i] = torch.zeros_like(zs_acc[i]).to(device)
 
         zs_concat = torch.cat(zs, dim=-1)
         z_concat = torch.cat([z_shared, zs_concat], dim=-1)
@@ -709,29 +711,29 @@ class Dis2pmVAE(BaseModuleClass):
         x_ = x
         if detach_x:
             x_ = x.detach()
-        print("detached x")
+        # print("detached x")
 
         #library = torch.ones(x_.size(dim=0) ) 
 
         cat_in = torch.split(cat_covs, 1, dim=1)
-        print("torch.split ")
+        # print("torch.split ")
 
         qz, z = (self.z_encoders_list_acc[idx](x_, *cat_in))
         if detach_z:
             z = z.detach()
-        print("detached z")
+        # print("detached z")
 
         dec_cats = [cat_in[j] for j in range(len(cat_in)) if j != idx-1]
-        print("dec_cats ")
+        # print("dec_cats ")
 
         x_decoder_acc = self.x_decoders_list_acc[idx]
-        print("x_decoder ")
+        # print("x_decoder ")
 
         px_acc = x_decoder_acc(
             z,
             *dec_cats
         )       
-        print("x_decoder 2")
+        # print("x_decoder 2")
 
         return px_acc
     
@@ -795,8 +797,8 @@ class Dis2pmVAE(BaseModuleClass):
 #         print(f'the len(p) is {len(p)}')
 
 #         print(f'the d_unlist is {d_unlist}')
-        print(f'the p size is {p.size()}')
-        print(f'the x size is {x.size()}')
+        # print(f'the p size is {p.size()}')
+        # print(f'the x size is {x.size()}')
 
         return torch.nn.BCELoss(reduction="none")(
             #p * d , (x > 0).float()
@@ -847,7 +849,7 @@ class Dis2pmVAE(BaseModuleClass):
         
                 
         # ATAC reconstruction loss X'
-        print("ATAC reconstruction loss X' ")
+        # print("ATAC reconstruction loss X' ")
 
         cat_covs = tensors[REGISTRY_KEYS.CAT_COVS_KEY]
         batch_size = x.size(dim=0)
@@ -882,21 +884,21 @@ class Dis2pmVAE(BaseModuleClass):
                 cat_cov_ = torch.cat(cat_cov_split, dim=1)
                 # use enc/dec idx+1 to get px_ and feed px_.mean as the next x_
                 
-                print(f'idx + 1 = {idx + 1}')
-                print(f'x_ = {x_}')
-                print(f'cat_cov_ = {cat_cov_}')               
+                # print(f'idx + 1 = {idx + 1}')
+                # print(f'x_ = {x_}')
+                # print(f'cat_cov_ = {cat_cov_}')               
 
                 px_acc = self.sub_forward_acc(idx + 1, x=x_, cat_covs=cat_cov_)
                 x_ = px_acc
 
             reconst_loss_x_cf_list_acc.append(  self.get_reconstruction_loss_accessibility(x_cf_acc, px_acc, libsize_acc).sum(-1)        )
 
-        print(f'reconst_loss_x_cf_list_acc before sum is {reconst_loss_x_cf_list_acc}')
+        # print(f'reconst_loss_x_cf_list_acc before sum is {reconst_loss_x_cf_list_acc}')
         reconst_loss_x_cf_acc = sum(reconst_loss_x_cf_list_acc) / n_cf
         
         
         # ATAC KL divergence Z
-        print("ATAC KL divergence Z ")
+        # print("ATAC KL divergence Z ")
 
         kl_z_list_acc = [torch.mean(kl(qzs_acc, qzs_prior_acc).sum(dim=1)) for qzs_acc, qzs_prior_acc in
                      zip(inference_outputs["qzs_acc"], inference_outputs["qzs_prior_acc"])]
@@ -904,7 +906,7 @@ class Dis2pmVAE(BaseModuleClass):
         kl_z_dict_acc = {'z_acc_' + str(i+1): kl_z_list_acc[i] for i in range(len(kl_z_list_acc))}
 
         # ATAC classification metrics: CE, ACC, F1
-        print("ATAC classification metrics: CE, ACC, F1 ")
+        # print("ATAC classification metrics: CE, ACC, F1 ")
 
         logits_acc = self.classification_logits_acc(inference_outputs)
         ce_loss_sum_acc, accuracy_acc, f1_acc = self.compute_clf_metrics(logits_acc, cat_covs)
@@ -920,14 +922,14 @@ class Dis2pmVAE(BaseModuleClass):
         # Gene expression Loss ---------------------------------
         
         # reconstruction loss X
-        print("GEX reconstruction loss X ")
+        # print("GEX reconstruction loss X ")
 
         reconst_loss_x_list = [-torch.mean(px.log_prob(x_rna).sum(-1)) for px in generative_outputs["px"]]
         reconst_loss_x_dict = {'x_' + str(i): reconst_loss_x_list[i] for i in range(len(reconst_loss_x_list))}
         reconst_loss_x = sum(reconst_loss_x_list)
 
         # reconstruction loss X'
-        print("GEX reconstruction loss X cf ")
+        # print("GEX reconstruction loss X cf ")
 
         # cat_covs = tensors[REGISTRY_KEYS.CAT_COVS_KEY]
         # batch_size = x.size(dim=0)
@@ -965,11 +967,11 @@ class Dis2pmVAE(BaseModuleClass):
 
             reconst_loss_x_cf_list.append(-torch.mean(px_.log_prob(x_cf).sum(-1)))
             
-        print(f'reconst_loss_x_cf_list before sum is {reconst_loss_x_cf_list}')
+        # print(f'reconst_loss_x_cf_list before sum is {reconst_loss_x_cf_list}')
         reconst_loss_x_cf = sum(reconst_loss_x_cf_list) / n_cf
 
         # KL divergence Z
-        print("GEX reconstruction loss KL divergence Z ")
+        # print("GEX reconstruction loss KL divergence Z ")
 
         kl_z_list = [torch.mean(kl(qzs, qzs_prior).sum(dim=1)) for qzs, qzs_prior in
                      zip(inference_outputs["qzs"], inference_outputs["qzs_prior"])]
@@ -977,15 +979,15 @@ class Dis2pmVAE(BaseModuleClass):
         kl_z_dict = {'z_' + str(i+1): kl_z_list[i] for i in range(len(kl_z_list))}
 
         # classification metrics: CE, ACC, F1
-        print("GEX classification metrics: CE, ACC, F1 ")
+        # print("GEX classification metrics: CE, ACC, F1 ")
 
         logits = self.classification_logits(inference_outputs)
         ce_loss_sum, accuracy, f1 = self.compute_clf_metrics(logits, cat_covs)
         ce_loss_mean = ce_loss_sum / len(range(self.zs_num))
 
         # total loss
-        print(f'reconst_loss_x_dict_acc is {reconst_loss_x_dict_acc}')
-        print(f'reconst_loss_x_dict is {reconst_loss_x_dict}')
+        # print(f'reconst_loss_x_dict_acc is {reconst_loss_x_dict_acc}')
+        # print(f'reconst_loss_x_dict is {reconst_loss_x_dict}')
 
         loss = reconst_loss_x + \
                reconst_loss_x_cf * cf_weight + \
@@ -996,15 +998,15 @@ class Dis2pmVAE(BaseModuleClass):
                sum(kl_z_list_acc) * kl_weight * beta + \
                ce_loss_sum_acc * clf_weight #+ \ 
         
-        print(f'total loss is {loss}')
-        print(f'reconst_loss_x is {reconst_loss_x}')
-        print(f'reconst_loss_x_cf is {reconst_loss_x_cf}')
-        print(f'sum(kl_z_list) is {sum(kl_z_list)}')
-        print(f'ce_loss_sum is {ce_loss_sum}')
-        print(f'reconst_loss_x_acc is {reconst_loss_x_acc}')
-        print(f'reconst_loss_x_cf_acc is {reconst_loss_x_cf_acc}')
-        print(f'sum(kl_z_list_acc) is {sum(kl_z_list_acc)}')
-        print(f'ce_loss_sum_acc is {ce_loss_sum_acc}')
+        # print(f'total loss is {loss}')
+        # print(f'reconst_loss_x is {reconst_loss_x}')
+        # print(f'reconst_loss_x_cf is {reconst_loss_x_cf}')
+        # print(f'sum(kl_z_list) is {sum(kl_z_list)}')
+        # print(f'ce_loss_sum is {ce_loss_sum}')
+        # print(f'reconst_loss_x_acc is {reconst_loss_x_acc}')
+        # print(f'reconst_loss_x_cf_acc is {reconst_loss_x_cf_acc}')
+        # print(f'sum(kl_z_list_acc) is {sum(kl_z_list_acc)}')
+        # print(f'ce_loss_sum_acc is {ce_loss_sum_acc}')
 
 
         loss_dict = {

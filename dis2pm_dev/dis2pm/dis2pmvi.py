@@ -262,6 +262,7 @@ class Dis2pmVI(
             adata=adata, indices=indices, batch_size=batch_size
         )
         latent = []
+        latent_atac = []
         for tensors in scdl:
             inference_inputs = self.module._get_inference_input(tensors)
             outputs = self.module.inference(**inference_inputs,
@@ -269,8 +270,9 @@ class Dis2pmVI(
                                             nullify_shared=nullify_shared)
 
             latent += [outputs["z_concat"].cpu()]
+            latent_atac += [outputs["z_concat_acc"].cpu()]
 
-        return torch.cat(latent).numpy()
+        return {"GEX": torch.cat(latent).numpy(), "ATAC": torch.cat(latent_atac).numpy()}
 
     # @devices_dsp.dedent
     def train(
