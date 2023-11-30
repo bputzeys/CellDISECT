@@ -221,7 +221,7 @@ def fair_clf_metrics(adata, cats, y_name, module_name):
         test_acc = np.mean(ACC_i)
         acc.append(test_acc)
 
-        print(f'i={i}: accuracy = {test_acc:.4f}, DP_diff = {dp_diff:.4f}, DP_ratio = {dp_ratio:.4f}, EO_diff = {eo_diff:.4f}')
+        print(f'i={i}: accuracy = {test_acc:.4f}, DP_diff = {dp_diff:.4f}, EO_diff = {eo_diff:.4f}')
 
     acc.append(np.mean(acc))
     DP_diff.append(np.mean(DP_diff))
