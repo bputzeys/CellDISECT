@@ -18,7 +18,7 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 from scvi.autotune._types import Tunable
 
 
-class Dis2pTrainingPlan(TrainingPlan):  # we should add more explanation
+class Dis2pmTrainingPlan(TrainingPlan):  # we should add more explanation
     """Train vaes with adversarial loss option to encourage latent space mixing.
 
     Parameters
@@ -214,7 +214,30 @@ class Dis2pTrainingPlan(TrainingPlan):  # we should add more explanation
 
         return self.module.compute_clf_metrics(logits, cat_covs)
 
+    def adv_classifier_metrics_atac(self, inference_outputs, detach_z=True):
+        """Loss for adversarial classifier."""
+        z_shared_acc = inference_outputs["z_shared_acc"]
+        zs_acc = inference_outputs["zs_acc"]
+        cat_covs = inference_outputs["cat_covs"]
 
+        if detach_z:
+            # detach z
+            zs_acc = [zs_i.detach() for zs_i in zs_acc]
+            z_shared_acc = z_shared_acc.detach()
+
+        logits = []
+        for i in range(self.zs_num):
+            # create Z - Zi
+            zs_sub_i = [zs_acc[j] for j in range(self.zs_num) if j != i]
+            z_concat_sub_i = torch.cat([z_shared_acc, *zs_sub_i], dim=-1).to(device)
+            # give to adv_clf_i
+            adv_clf_i = self.adv_clf_list[i]
+            logits_i = adv_clf_i(z_concat_sub_i)
+            logits += [logits_i]
+
+        return self.module.compute_clf_metrics(logits, cat_covs)
+
+    
     def training_step(self, batch, batch_idx):
         """Training step for adversarial training."""
 
@@ -248,7 +271,8 @@ class Dis2pTrainingPlan(TrainingPlan):  # we should add more explanation
             # fool classifier if doing adversarial training # change only the parameters not in the adversarial classifier
             if kappa > 0:
                 ce_loss_sum, accuracy, f1 = self.adv_classifier_metrics(inference_outputs, False)
-                loss -= ce_loss_sum * kappa * self.adv_clf_weight
+                ce_loss_sum_atac, accuracy_atac, f1_atac = self.adv_classifier_metrics_atac(inference_outputs, False)
+                loss -= ce_loss_sum * kappa * self.adv_clf_weight + ce_loss_sum_atac * kappa * self.adv_clf_weight
 
             opt1.zero_grad()
             self.manual_backward(loss)
@@ -258,13 +282,18 @@ class Dis2pTrainingPlan(TrainingPlan):  # we should add more explanation
         if opt2 is not None:
 
             ce_loss_sum, accuracy, f1 = self.adv_classifier_metrics(inference_outputs, True)
+            ce_loss_sum_atac, accuracy_atac, f1_atac = self.adv_classifier_metrics_atac(inference_outputs, True)
             ce_loss_sum *= kappa
+            ce_loss_sum_atac *= kappa
+            ce_loss_sum_rna_n_atac = ce_loss_sum + ce_loss_sum_atac
             opt2.zero_grad()
-            self.manual_backward(ce_loss_sum)
+            self.manual_backward(ce_loss_sum_rna_n_atac)
             opt2.step()
 
         ce_loss_mean = ce_loss_sum / len(range(self.zs_num))
-        losses.update({'adv_ce': ce_loss_mean, 'adv_acc': accuracy, 'adv_f1': f1})
+        ce_loss_mean_atac = ce_loss_sum_atac / len(range(self.zs_num))
+        losses.update({'adv_ce': ce_loss_mean, 'adv_acc': accuracy, 'adv_f1': f1,
+                      'adv_ce_atac': ce_loss_mean_atac, 'adv_acc_atac': accuracy_atac, 'adv_f1_atac': f1_atac })
 
         self.compute_and_log_metrics(losses, self.train_metrics, "train")
 
@@ -281,9 +310,12 @@ class Dis2pTrainingPlan(TrainingPlan):  # we should add more explanation
         )
 
         ce_loss_sum, accuracy, f1 = self.adv_classifier_metrics(inference_outputs, True)
+        ce_loss_sum_atac, accuracy_atac, f1_atac = self.adv_classifier_metrics_atac(inference_outputs, True)
 
         ce_loss_mean = ce_loss_sum / len(range(self.zs_num))
-        losses.update({'adv_ce': ce_loss_mean, 'adv_acc': accuracy, 'adv_f1': f1})
+        ce_loss_mean_atac = ce_loss_sum_atac / len(range(self.zs_num))
+        losses.update({'adv_ce': ce_loss_mean, 'adv_acc': accuracy, 'adv_f1': f1,
+                       'adv_ce_atac': ce_loss_mean_atac, 'adv_acc_atac': accuracy_atac, 'adv_f1_atac': f1_atac})
 
         self.compute_and_log_metrics(losses, self.val_metrics, "validation")
 

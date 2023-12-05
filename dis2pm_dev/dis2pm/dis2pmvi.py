@@ -25,7 +25,7 @@ from scvi.autotune._types import Tunable, TunableMixin
 logger = logging.getLogger(__name__)
 
 from .dis2pmvae import Dis2pmVAE
-from .trainingplan_m import Dis2pTrainingPlan
+from .trainingplan_m import Dis2pmTrainingPlan
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -79,7 +79,7 @@ class Dis2pmVI(
 
     _module_cls = Dis2pmVAE
     _data_splitter_cls = DataSplitter
-    _training_plan_cls = Dis2pTrainingPlan
+    _training_plan_cls = Dis2pmTrainingPlan
     _train_runner_cls = TrainRunner
 
     def __init__(
