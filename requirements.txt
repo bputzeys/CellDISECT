@@ -1,7 +1,7 @@
 scvi-tools
 scanpy
-torch
-scikit-learn
+pytorch
+sklearn
 matplotlib
 scipy
 xgboost
