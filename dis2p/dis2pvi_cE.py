@@ -24,14 +24,14 @@ from scvi.model.base import RNASeqMixin, VAEMixin, BaseModelClass
 from scvi.autotune._types import Tunable, TunableMixin
 logger = logging.getLogger(__name__)
 
-from .dis2pvae import Dis2pVAE
+from .dis2pvae_cE import Dis2pVAE_cE
 from .data import AnnDataSplitter
 from .trainingplan import Dis2pTrainingPlan
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 
-class Dis2pVI(
+class Dis2pVI_cE(
     RNASeqMixin,
     VAEMixin,
     UnsupervisedTrainingMixin,
@@ -71,14 +71,14 @@ class Dis2pVI(
     Examples
     --------
     >>> adata = anndata.read_h5ad(path_to_anndata)
-    >>> Dis2pVI.setup_anndata(adata, batch_key="batch")
-    >>> vae = Dis2pVI(adata)
+    >>> Dis2pVI_cE.setup_anndata(adata, batch_key="batch")
+    >>> vae = Dis2pVI_cE(adata)
     >>> vae.train()
     >>> adata.obsm["X_scVI"] = vae.get_latent_representation()
     >>> adata.obsm["X_normalized_scVI"] = vae.get_normalized_expression()
     """
 
-    _module_cls = Dis2pVAE
+    _module_cls = Dis2pVAE_cE
     _data_splitter_cls = AnnDataSplitter
     _training_plan_cls = Dis2pTrainingPlan
     _train_runner_cls = TrainRunner
@@ -133,7 +133,7 @@ class Dis2pVI(
             self.test_indices = test_indices
             
         self._model_summary_string = (
-            "Dis2pVI Model with the following params: \nn_hidden: {}, n_latent_shared: {}, n_latent_attribute: {}"
+            "Dis2pVI_cE Model with the following params: \nn_hidden: {}, n_latent_shared: {}, n_latent_attribute: {}"
             ", n_layers: {}, dropout_rate: {}, gene_likelihood: {}, latent_distribution: {}"
         ).format(
             n_hidden,
@@ -210,7 +210,7 @@ class Dis2pVI(
         cov_name = cats[cov_idx]
         adata_cf.obs[cov_name] = pd.Categorical([cov_value_cf for _ in adata_cf.obs[cov_name]])
 
-        Dis2pVI.setup_anndata(
+        Dis2pVI_cE.setup_anndata(
             adata_cf,
             layer='counts',
             categorical_covariate_keys=cats,
