@@ -27,6 +27,8 @@ logger = logging.getLogger(__name__)
 from .dis2pvae import Dis2pVAE
 from .trainingplan import Dis2pTrainingPlan
 
+from scvi.train._callbacks import SaveBestState
+
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 
@@ -275,6 +277,7 @@ class Dis2pVI(
             validation_size: Optional[float] = None,
             batch_size: int = 256,
             early_stopping: bool = True,
+            save_best: bool = False,
             plan_kwargs: Optional[dict] = None,
             cf_weight: Tunable[Union[float, int]] = 1,  # RECONST_LOSS_X_CF weight
             beta: Tunable[Union[float, int]] = 1,  # KL Zi weight
@@ -318,6 +321,9 @@ class Dis2pVI(
             adversarial training period
         n_cf
             number of X_cf recons (a random permutation of n VAEs and a random half-batch subset for each trial)
+        save_best
+            Save the best model state with respect to the validation loss, or use the final
+            state in the training procedure (default)
         **trainer_kwargs
             Other keyword args for :class:`~scvi.train.Trainer`.
         """
@@ -325,6 +331,13 @@ class Dis2pVI(
         n_cells = self.adata.n_obs
         if max_epochs is None:
             max_epochs = int(np.min([round((20000 / n_cells) * 400), 400]))
+
+        if save_best:
+            if "callbacks" not in trainer_kwargs.keys():
+                trainer_kwargs["callbacks"] = []
+            trainer_kwargs["callbacks"].append(
+                SaveBestState(monitor="loss_validation")
+            )
 
         plan_kwargs = plan_kwargs if isinstance(plan_kwargs, dict) else {}
 
