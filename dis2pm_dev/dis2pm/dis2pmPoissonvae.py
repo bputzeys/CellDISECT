@@ -115,10 +115,10 @@ class DecoderPoissonVI(nn.Module):
         4-tuple of :py:class:`torch.Tensor`
             parameters for the ZINB distribution of expression
         """
-        print(f'size of library in DecoderPoissonVI is {library.size()}')
+        #print(f'size of library in DecoderPoissonVI is {library.size()}')
         px = self.px_decoder(z, *cat_list)
         px_scale = self.px_scale_decoder(px)
-        print(f'size of px_scale in DecoderPoissonVI is {px_scale.size()}')
+        #print(f'size of px_scale in DecoderPoissonVI is {px_scale.size()}')
 
         px_dropout = None 
         # Clamp to high value: exp(12) ~ 160000 to avoid nans (computational stability)
@@ -515,7 +515,12 @@ class Dis2pmPoissonVAE(BaseModuleClass):
         # library_acc
         batch_size = x.size(dim=0)
         library_acc = torch.log(x_r.sum(1)).unsqueeze(1).to(device) #torch.unsqueeze(x.sum(1),1) 
+        
+        # log-transform the atac
+        if self.log_variational:
+            x_r = torch.log(1 + x_r)
 
+        
         cat_in = torch.split(cat_covs, 1, dim=1)
 
         # z_shared, z_shared_acc: qz is the distribution, z is a sample from it
@@ -526,7 +531,12 @@ class Dis2pmPoissonVAE(BaseModuleClass):
         qz_shared, z_shared = self.z_encoders_list[0](x_, *cat_in)
         z_shared = z_shared.to(device)
 
+        #####print(f'x_r is {x_r}')
+
+
         qz_shared_acc, z_shared_acc = self.z_encoders_list_acc[0](x_r, *cat_in)
+        #print(f'qz_shared_acc {qz_shared_acc}')
+        #######print(f'z_shared_acc {z_shared_acc}')
         z_shared_acc = z_shared_acc.to(device)
 
         # zs
@@ -712,11 +722,11 @@ class Dis2pmPoissonVAE(BaseModuleClass):
             #print(f'x_decoder_acc is : {x_decoder_acc}')
             #print(f'x_decoder is : {x_decoder}')       
             
-            print(f'x_decoder_input_acc is : {x_decoder_input_acc.size()}')
-            print(f'the size of x_decoder_input_acc is : {x_decoder_input_acc}')
+            #print(f'x_decoder_input_acc is : {x_decoder_input_acc.size()}')
+            #print(f'the size of x_decoder_input_acc is : {x_decoder_input_acc}')
             #print(f'dec_covs is : {dec_covs}')
-            print(f'library_acc is : {library_acc}')
-            print(f'size of library_acc is {library_acc.size()}')
+            #print(f'library_acc is : {library_acc}')
+            #print(f'size of library_acc is {library_acc.size()}')
 
 
 
@@ -898,7 +908,7 @@ class Dis2pmPoissonVAE(BaseModuleClass):
     
     def get_reconstruction_loss_accessibility(self, x, px_acc):
         """Computes the reconstruction loss for the accessibility data."""
-        print("inside get_reconstruction_loss_accessibility")
+        #print("inside get_reconstruction_loss_accessibility")
 
         reconst_loss = Poisson(px_acc).log_prob(x).sum(dim=-1)
 
