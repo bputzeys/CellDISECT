@@ -898,11 +898,11 @@ class Dis2pmPoissonVAE(BaseModuleClass):
 
         return ce_loss_sum, accuracy, f1
     
-    def get_reconstruction_loss_accessibility(self, x, p, d):
+    def get_reconstruction_loss_accessibility(self, x, px_acc):
         """Computes the reconstruction loss for the accessibility data."""
         print("inside get_reconstruction_loss_accessibility")
 
-        reconst_loss = Poisson(px_rate).log_prob(x).sum(dim=-1)
+        reconst_loss = Poisson(px_acc).log_prob(x).sum(dim=-1)
 
         return reconst_loss
         #reg_factor = (
@@ -963,7 +963,7 @@ class Dis2pmPoissonVAE(BaseModuleClass):
         libsize_acc = inference_outputs["library_acc"]
         
         reconst_loss_x_list_acc = [ 
-            -torch.mean(self.get_reconstruction_loss_accessibility(x_chr, px_acc, libsize_acc))
+            -torch.mean(self.get_reconstruction_loss_accessibility(x_chr, px_acc))
             for px_acc in generative_outputs["px_acc"]
         ]
         reconst_loss_x_dict_acc = {'atac_' + str(i): reconst_loss_x_list_acc[i] for i in range(len(reconst_loss_x_list_acc))}
@@ -1013,7 +1013,7 @@ class Dis2pmPoissonVAE(BaseModuleClass):
                 px_acc = self.sub_forward_acc(idx + 1, x=x_, cat_covs=cat_cov_)
                 x_ = px_acc
 
-            reconst_loss_x_cf_list_acc.append(  -self.get_reconstruction_loss_accessibility(x_cf_acc, px_acc, libsize_acc).sum(-1)        )
+            reconst_loss_x_cf_list_acc.append(  -self.get_reconstruction_loss_accessibility(x_cf_acc, px_acc).sum(-1)        )
 
         # print(f'reconst_loss_x_cf_list_acc before sum is {reconst_loss_x_cf_list_acc}')
         reconst_loss_x_cf_acc = sum(reconst_loss_x_cf_list_acc) / n_cf
