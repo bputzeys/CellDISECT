@@ -122,7 +122,7 @@ class DecoderPoissonVI(nn.Module):
 
         px_dropout = None 
         # Clamp to high value: exp(12) ~ 160000 to avoid nans (computational stability)
-        px_rate = torch.exp(library) * px_scale  # torch.clamp( , max=12)
+        px_rate = torch.clamp( torch.exp(library) * px_scale , max=12)
         px_r = None
         return px_scale, px_r, px_rate, px_dropout
     
@@ -830,7 +830,7 @@ class Dis2pmPoissonVAE(BaseModuleClass):
             x_ = x.detach()
         # print("detached x")
 
-        #library = torch.ones(x_.size(dim=0) ) 
+        library_acc = torch.log(x_.sum(1)).unsqueeze(1).to(device) 
 
         cat_in = torch.split(cat_covs, 1, dim=1)
         # print("torch.split ")
@@ -844,14 +844,12 @@ class Dis2pmPoissonVAE(BaseModuleClass):
         # print("dec_cats ")
 
         x_decoder_acc = self.x_decoders_list_acc[idx]
-        # print("x_decoder ")
+        # print("x_decoder ")     
 
-        px_acc = x_decoder_acc(
-            z,
-            *dec_cats
-        )       
-        # print("x_decoder 2")
-
+        y_scale, _, px_acc, _ = x_decoder_acc(
+            z, library_acc, *dec_cats
+        )        
+                
         return px_acc
     
     
