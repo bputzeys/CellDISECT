@@ -24,7 +24,7 @@ from scvi.model.base import RNASeqMixin, VAEMixin, BaseModelClass
 from scvi.autotune._types import Tunable, TunableMixin
 logger = logging.getLogger(__name__)
 
-from .dis2pmvae import Dis2pmVAE
+from .dis2pmPoissonvae import Dis2pmPoissonVAE
 from .trainingplan_m import Dis2pmTrainingPlan
 
 from scvi.train._callbacks import SaveBestState
@@ -79,7 +79,7 @@ class Dis2pmPoissonVI(
     >>> adata.obsm["X_normalized_scVI"] = vae.get_normalized_expression()
     """
 
-    _module_cls = Dis2pmVAE
+    _module_cls = Dis2pmPoissonVAE
     _data_splitter_cls = DataSplitter
     _training_plan_cls = Dis2pmTrainingPlan
     _train_runner_cls = TrainRunner
