@@ -11,7 +11,8 @@ from scvi import REGISTRY_KEYS
 from scvi.autotune._types import Tunable
 from scvi.distributions import NegativeBinomial, Poisson, ZeroInflatedNegativeBinomial
 from scvi.module.base import BaseModuleClass, auto_move_data
-from scvi.nn import DecoderSCVI, Encoder
+from scvi.nn import DecoderSCVI, Encoder, FCLayers
+
 
 torch.backends.cudnn.benchmark = True
 from .utils_m import *
@@ -20,10 +21,111 @@ from scvi.module._classifier import Classifier
 dim_indices = 0
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-# import PeakVI modules
-from scvi.module._peakvae import Decoder as DecoderPeakVI
+# define DecoderPoissonVI module for atac
+
+#from scvi.module._peakvae import Decoder as DecoderPeakVI
+#from poisson_atac.module._poissonvae import DecoderPoissonVI
 
 
+class DecoderPoissonVI(nn.Module):
+    """
+    Decodes data from latent space of ``n_input`` dimensions into ``n_output``dimensions.
+    Uses a fully-connected neural network of ``n_hidden`` layers.
+    Parameters
+    ----------
+    n_input
+        The dimensionality of the input (latent space)
+    n_output
+        The dimensionality of the output (data space)
+    n_cat_list
+        A list containing the number of categories
+        for each category of interest. Each category will be
+        included using a one-hot encoding
+    n_layers
+        The number of fully-connected hidden layers
+    n_hidden
+        The number of nodes per hidden layer
+    dropout_rate
+        Dropout rate to apply to each of the hidden layers
+    inject_covariates
+        Whether to inject covariates in each layer, or just the first (default).
+    use_batch_norm
+        Whether to use batch norm in layers
+    use_layer_norm
+        Whether to use layer norm in layers
+    scale_activation
+        Activation layer to use for px_scale_decoder
+    """
+
+    def __init__(
+        self,
+        n_input: int,
+        n_output: int,
+        n_cat_list: Iterable[int] = None,
+        n_layers: int = 1,
+        n_hidden: int = 128,
+        inject_covariates: bool = True,
+        use_batch_norm: bool = False,
+        use_layer_norm: bool = False,
+        scale_activation: Tunable["softmax", "softplus"] = "softmax",
+    ):
+        super().__init__()
+        self.px_decoder = FCLayers(
+            n_in=n_input,
+            n_out=n_hidden,
+            n_cat_list=n_cat_list,
+            n_layers=n_layers,
+            n_hidden=n_hidden,
+            dropout_rate=0,
+            inject_covariates=inject_covariates,
+            use_batch_norm=use_batch_norm,
+            use_layer_norm=use_layer_norm,
+            activation_fn=torch.nn.LeakyReLU, # adding this because PeakVi uses Leaky Relu in decoder
+        )
+
+        #self.region_factor = torch.nn.Parameter(torch.zeros(n_output))
+        #TODO: add region factor later to be more easily able to retrieve it
+        # mean gamma
+        if scale_activation == "softmax":
+            px_scale_activation = nn.Softmax(dim=-1)
+        elif scale_activation == "softplus":
+            px_scale_activation = nn.Softplus()
+        self.px_scale_decoder = nn.Sequential(
+            nn.Linear(n_hidden, n_output, bias=True), 
+            px_scale_activation,
+        )
+
+    def forward(
+        self,
+        z: torch.Tensor,
+        library: torch.Tensor,
+        *cat_list: int,
+    ):
+        """
+        Parameters
+        ----------
+        z :
+            tensor with shape ``(n_input,)``
+        library_size
+            library size
+        cat_list
+            list of category membership(s) for this sample
+        Returns
+        -------
+        4-tuple of :py:class:`torch.Tensor`
+            parameters for the ZINB distribution of expression
+        """
+        print(f'size of library in DecoderPoissonVI is {library.size()}')
+        px = self.px_decoder(z, *cat_list)
+        px_scale = self.px_scale_decoder(px)
+        print(f'size of px_scale in DecoderPoissonVI is {px_scale.size()}')
+
+        px_dropout = None 
+        # Clamp to high value: exp(12) ~ 160000 to avoid nans (computational stability)
+        px_rate = torch.exp(library) * px_scale  # torch.clamp( , max=12)
+        px_r = None
+        return px_scale, px_r, px_rate, px_dropout
+    
 
 class Dis2pmPoissonVAE(BaseModuleClass):
     """
@@ -307,13 +409,12 @@ class Dis2pmPoissonVAE(BaseModuleClass):
         
         self.x_decoders_list_acc = nn.ModuleList(
             [
-                DecoderPeakVI(
+                DecoderPoissonVI(
                     n_latent_shared,
                     n_input_regions,
                     n_cat_list=self.n_cat_list,
                     n_layers=n_layers,
                     n_hidden=n_hidden,
-                    deep_inject_covariates=deeply_inject_covariates,
                     use_batch_norm=use_batch_norm_decoder,
                     use_layer_norm=use_layer_norm_decoder,
                 ).to(device)
@@ -322,13 +423,13 @@ class Dis2pmPoissonVAE(BaseModuleClass):
 
         self.x_decoders_list_acc.extend(
             [
-                DecoderPeakVI(
+                DecoderPoissonVI(
                     n_latent_attribute,
                     n_input_regions,
                     n_cat_list=[self.n_cat_list[i] for i in range(len(self.n_cat_list)) if i != k],
                     n_layers=n_layers,
                     n_hidden=n_hidden,
-                    deep_inject_covariates=deeply_inject_covariates,
+                    #deep_inject_covariates=deeply_inject_covariates,
                     use_batch_norm=use_batch_norm_decoder,
                     use_layer_norm=use_layer_norm_decoder,
                 ).to(device)
@@ -413,7 +514,7 @@ class Dis2pmPoissonVAE(BaseModuleClass):
             
         # library_acc
         batch_size = x.size(dim=0)
-        library_acc = torch.ones( batch_size ) #torch.unsqueeze(x.sum(1),1) 
+        library_acc = torch.log(x_r.sum(1)).unsqueeze(1).to(device) #torch.unsqueeze(x.sum(1),1) 
 
         cat_in = torch.split(cat_covs, 1, dim=1)
 
@@ -573,9 +674,7 @@ class Dis2pmPoissonVAE(BaseModuleClass):
 
             dec_covs = dec_cats_in[dec_count]
             
-            # For gene expression
-            #print(f'library is : {library.size()}')
-
+            # ----------------------- For gene expression -----------------------
 
             x_decoder = self.x_decoders_list[dec_count]
             x_decoder_input = z[dec_count]
@@ -606,25 +705,39 @@ class Dis2pmPoissonVAE(BaseModuleClass):
             output_dict["px"] += [px]
             
             
-            # For accessibility
-            x_decoder_acc = self.x_decoders_list_acc[dec_count]
-            #print(f'x_decoder_acc is : {x_decoder_acc}')
-            #print(f'x_decoder is : {x_decoder}')
+            # ----------------------- For accessibility -----------------------
             
+            x_decoder_acc = self.x_decoders_list_acc[dec_count]            
             x_decoder_input_acc = z_acc[dec_count]
+            #print(f'x_decoder_acc is : {x_decoder_acc}')
+            #print(f'x_decoder is : {x_decoder}')       
             
-            #print(f'x_decoder_input_acc is : {x_decoder_input_acc.size()}')
-            #print(f'x_decoder_input_acc is : {x_decoder_input_acc}')
+            print(f'x_decoder_input_acc is : {x_decoder_input_acc.size()}')
+            print(f'the size of x_decoder_input_acc is : {x_decoder_input_acc}')
             #print(f'dec_covs is : {dec_covs}')
-            #print(f'library_acc is : {library_acc}')
+            print(f'library_acc is : {library_acc}')
+            print(f'size of library_acc is {library_acc.size()}')
+
+
+
+            y_scale, _, px_acc, _ = x_decoder_acc(
+                x_decoder_input_acc, library_acc, *dec_covs
+            )        
+                
+            
+            # px_acc = x_decoder_acc(
+            #     x_decoder_input_acc,
+            #     *dec_covs
+            # )
 
             
-            px_acc = x_decoder_acc(
-                x_decoder_input_acc,
-                *dec_covs
-            )
-            
+            #output_dict["y_scale"] += [y_scale]  
             output_dict["px_acc"] += [px_acc]  
+
+
+
+
+        
             
             #print(f'px in the end of loop is {output_dict["px"]}')
             #print(f'px_acc in the end of loop is {output_dict["px_acc"]}')
@@ -787,6 +900,11 @@ class Dis2pmPoissonVAE(BaseModuleClass):
     
     def get_reconstruction_loss_accessibility(self, x, p, d):
         """Computes the reconstruction loss for the accessibility data."""
+        print("inside get_reconstruction_loss_accessibility")
+
+        reconst_loss = Poisson(px_rate).log_prob(x).sum(dim=-1)
+
+        return reconst_loss
         #reg_factor = (
         #    torch.sigmoid(self.region_factors) if self.region_factors is not None else 1
         #)
@@ -804,10 +922,10 @@ class Dis2pmPoissonVAE(BaseModuleClass):
         # print(f'the p size is {p.size()}')
         # print(f'the x size is {x.size()}')
 
-        return torch.nn.BCELoss(reduction="none")(
-            #p * d , (x > 0).float()
-            p  , (x > 0).float()
-        ).sum(dim=-1)
+        # return torch.nn.BCELoss(reduction="none")(
+        #     #p * d , (x > 0).float()
+        #     p  , (x > 0).float()
+        # ).sum(dim=-1)
     
     
 
@@ -845,7 +963,7 @@ class Dis2pmPoissonVAE(BaseModuleClass):
         libsize_acc = inference_outputs["library_acc"]
         
         reconst_loss_x_list_acc = [ 
-            torch.mean(self.get_reconstruction_loss_accessibility(x_chr, px_acc, libsize_acc))
+            -torch.mean(self.get_reconstruction_loss_accessibility(x_chr, px_acc, libsize_acc))
             for px_acc in generative_outputs["px_acc"]
         ]
         reconst_loss_x_dict_acc = {'atac_' + str(i): reconst_loss_x_list_acc[i] for i in range(len(reconst_loss_x_list_acc))}
@@ -895,7 +1013,7 @@ class Dis2pmPoissonVAE(BaseModuleClass):
                 px_acc = self.sub_forward_acc(idx + 1, x=x_, cat_covs=cat_cov_)
                 x_ = px_acc
 
-            reconst_loss_x_cf_list_acc.append(  self.get_reconstruction_loss_accessibility(x_cf_acc, px_acc, libsize_acc).sum(-1)        )
+            reconst_loss_x_cf_list_acc.append(  -self.get_reconstruction_loss_accessibility(x_cf_acc, px_acc, libsize_acc).sum(-1)        )
 
         # print(f'reconst_loss_x_cf_list_acc before sum is {reconst_loss_x_cf_list_acc}')
         reconst_loss_x_cf_acc = sum(reconst_loss_x_cf_list_acc) / n_cf
