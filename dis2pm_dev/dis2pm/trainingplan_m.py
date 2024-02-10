@@ -120,8 +120,16 @@ class Dis2pmTrainingPlan(TrainingPlan):  # we should add more explanation
         self.adv_input_size = module.n_latent_shared + module.n_latent_attribute * (module.zs_num - 1)
 
         self.adv_clf_list = nn.ModuleList([])
+        self.adv_clf_list_acc = nn.ModuleList([])
         for i in range(self.zs_num):
+            
             self.adv_clf_list.append(
+                Classifier(
+                    n_input=self.adv_input_size,
+                    n_labels=self.n_cat_list[i],
+                ).to(device)
+            )
+            self.adv_clf_list_acc.append(
                 Classifier(
                     n_input=self.adv_input_size,
                     n_labels=self.n_cat_list[i],
@@ -231,7 +239,7 @@ class Dis2pmTrainingPlan(TrainingPlan):  # we should add more explanation
             zs_sub_i = [zs_acc[j] for j in range(self.zs_num) if j != i]
             z_concat_sub_i = torch.cat([z_shared_acc, *zs_sub_i], dim=-1).to(device)
             # give to adv_clf_i
-            adv_clf_i = self.adv_clf_list[i]
+            adv_clf_i = self.adv_clf_list_acc[i]
             logits_i = adv_clf_i(z_concat_sub_i)
             logits += [logits_i]
 
