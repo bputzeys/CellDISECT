@@ -334,6 +334,8 @@ class Dis2pVAE(BaseModuleClass):
                 library,
                 *dec_covs
             )
+            
+            print(f'the types of the variables are {type(px_scale)}, {type(px_r)}, {type(px_rate)}, {type(px_dropout)}')
 
             if self.gene_likelihood == "zinb":
                 px = ZeroInflatedNegativeBinomial(
