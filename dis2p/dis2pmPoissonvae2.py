@@ -581,7 +581,6 @@ class Dis2pmPoissonVAE2(BaseModuleClass):
                 library,
                 *dec_covs
             )
-            
             px_r = torch.exp(self.px_r)
 
             if self.gene_likelihood == "zinb":
@@ -600,6 +599,33 @@ class Dis2pmPoissonVAE2(BaseModuleClass):
             
             
             # ----------------------- For accessibility -----------------------
+            
+
+            # #print(f'x_decoder_acc is : {x_decoder_acc}')
+            # #print(f'x_decoder is : {x_decoder}')       
+            
+            # #print(f'x_decoder_input_acc is : {x_decoder_input_acc.size()}')
+            # #print(f'the size of x_decoder_input_acc is : {x_decoder_input_acc}')
+            # #print(f'dec_covs is : {dec_covs}')
+            # #print(f'library_acc is : {library_acc}')
+            # #print(f'size of library_acc is {library_acc.size()}')
+
+
+
+            # y_scale, _, px_acc, _ = x_decoder_acc(
+            #     x_decoder_input_acc, library_acc, *dec_covs
+            # )        
+                
+            
+            # # px_acc = x_decoder_acc(
+            # #     x_decoder_input_acc,
+            # #     *dec_covs
+            # # )
+
+            
+            # #output_dict["y_scale"] += [y_scale]  
+            # output_dict["px_acc"] += [px_acc] 
+            # # ---------------
 
             x_decoder_acc = self.x_decoders_list_acc[dec_count]            
             x_decoder_input_acc = z_acc[dec_count]
@@ -610,7 +636,6 @@ class Dis2pmPoissonVAE2(BaseModuleClass):
                 library_acc,
                 *dec_covs
             )
-
             px_r_acc = torch.exp(self.px_r_acc)
 
             if self.gene_likelihood == "zinb":
@@ -669,14 +694,13 @@ class Dis2pmPoissonVAE2(BaseModuleClass):
 
         x_decoder = self.x_decoders_list[idx]
 
-        px_r = torch.exp(self.px_r)
-
         px_scale, px_r, px_rate, px_dropout = x_decoder(
             self.dispersion,
             z,
             library,
             *dec_cats
         )
+        px_r = torch.exp(self.px_r)
 
         if self.gene_likelihood == "zinb":
             px = ZeroInflatedNegativeBinomial(
@@ -738,6 +762,7 @@ class Dis2pmPoissonVAE2(BaseModuleClass):
             library,
             *dec_cats
         )
+        px_r = torch.exp(self.px_r_acc)
 
         if self.gene_likelihood == "zinb":
             px = ZeroInflatedNegativeBinomial(
