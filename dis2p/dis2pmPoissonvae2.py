@@ -111,8 +111,8 @@ class Dis2pmPoissonVAE2(BaseModuleClass):
         # Automatically deactivate if useless
         self.latent_distribution = latent_distribution
 
-        #self.px_r = torch.nn.Parameter(torch.randn(n_input_genes)).to(device)
-        #self.px_r_acc = torch.nn.Parameter(torch.randn(n_input_regions)).to(device)
+        self.px_r = torch.nn.Parameter(torch.randn(n_input_genes)).to(device)
+        self.px_r_acc = torch.nn.Parameter(torch.randn(n_input_regions)).to(device)
 
         use_batch_norm_encoder = use_batch_norm == "encoder" or use_batch_norm == "both"
         use_batch_norm_decoder = use_batch_norm == "decoder" or use_batch_norm == "both"
@@ -581,6 +581,8 @@ class Dis2pmPoissonVAE2(BaseModuleClass):
                 library,
                 *dec_covs
             )
+            
+            px_r = torch.exp(self.px_r)
 
             if self.gene_likelihood == "zinb":
                 px = ZeroInflatedNegativeBinomial(
@@ -598,33 +600,6 @@ class Dis2pmPoissonVAE2(BaseModuleClass):
             
             
             # ----------------------- For accessibility -----------------------
-            
-
-            # #print(f'x_decoder_acc is : {x_decoder_acc}')
-            # #print(f'x_decoder is : {x_decoder}')       
-            
-            # #print(f'x_decoder_input_acc is : {x_decoder_input_acc.size()}')
-            # #print(f'the size of x_decoder_input_acc is : {x_decoder_input_acc}')
-            # #print(f'dec_covs is : {dec_covs}')
-            # #print(f'library_acc is : {library_acc}')
-            # #print(f'size of library_acc is {library_acc.size()}')
-
-
-
-            # y_scale, _, px_acc, _ = x_decoder_acc(
-            #     x_decoder_input_acc, library_acc, *dec_covs
-            # )        
-                
-            
-            # # px_acc = x_decoder_acc(
-            # #     x_decoder_input_acc,
-            # #     *dec_covs
-            # # )
-
-            
-            # #output_dict["y_scale"] += [y_scale]  
-            # output_dict["px_acc"] += [px_acc] 
-            # # ---------------
 
             x_decoder_acc = self.x_decoders_list_acc[dec_count]            
             x_decoder_input_acc = z_acc[dec_count]
@@ -635,6 +610,8 @@ class Dis2pmPoissonVAE2(BaseModuleClass):
                 library_acc,
                 *dec_covs
             )
+
+            px_r_acc = torch.exp(self.px_r_acc)
 
             if self.gene_likelihood == "zinb":
                 px_acc = ZeroInflatedNegativeBinomial(
@@ -691,6 +668,8 @@ class Dis2pmPoissonVAE2(BaseModuleClass):
         dec_cats = [cat_in[j] for j in range(len(cat_in)) if j != idx-1]
 
         x_decoder = self.x_decoders_list[idx]
+
+        px_r = torch.exp(self.px_r)
 
         px_scale, px_r, px_rate, px_dropout = x_decoder(
             self.dispersion,

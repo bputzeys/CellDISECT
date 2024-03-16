@@ -95,6 +95,7 @@ class Dis2pVAE(BaseModuleClass):
         self.latent_distribution = latent_distribution
 
         #self.px_r = torch.nn.Parameter(torch.randn(n_input)).to(device)
+        self.px_r = torch.nn.Parameter(torch.randn(n_input, device=device))
 
         use_batch_norm_encoder = use_batch_norm == "encoder" or use_batch_norm == "both"
         use_batch_norm_decoder = use_batch_norm == "decoder" or use_batch_norm == "both"
@@ -334,8 +335,8 @@ class Dis2pVAE(BaseModuleClass):
                 library,
                 *dec_covs
             )
-            
-            print(f'the types of the variables are {type(px_scale)}, {type(px_r)}, {type(px_rate)}, {type(px_dropout)}')
+                        
+            px_r = torch.exp(self.px_r)
 
             if self.gene_likelihood == "zinb":
                 px = ZeroInflatedNegativeBinomial(
@@ -395,6 +396,8 @@ class Dis2pVAE(BaseModuleClass):
             library,
             *dec_cats
         )
+
+        px_r = torch.exp(self.px_r)
 
         if self.gene_likelihood == "zinb":
             px = ZeroInflatedNegativeBinomial(
