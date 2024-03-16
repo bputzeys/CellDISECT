@@ -94,7 +94,7 @@ class Dis2pVAE(BaseModuleClass):
         # Automatically deactivate if useless
         self.latent_distribution = latent_distribution
 
-        self.px_r = torch.nn.Parameter(torch.randn(n_input)).to(device)
+        #self.px_r = torch.nn.Parameter(torch.randn(n_input)).to(device)
 
         use_batch_norm_encoder = use_batch_norm == "encoder" or use_batch_norm == "both"
         use_batch_norm_decoder = use_batch_norm == "decoder" or use_batch_norm == "both"
@@ -334,7 +334,6 @@ class Dis2pVAE(BaseModuleClass):
                 library,
                 *dec_covs
             )
-            px_r = torch.exp(self.px_r)
 
             if self.gene_likelihood == "zinb":
                 px = ZeroInflatedNegativeBinomial(
@@ -394,7 +393,6 @@ class Dis2pVAE(BaseModuleClass):
             library,
             *dec_cats
         )
-        px_r = torch.exp(self.px_r)
 
         if self.gene_likelihood == "zinb":
             px = ZeroInflatedNegativeBinomial(
