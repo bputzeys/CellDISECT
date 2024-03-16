@@ -372,11 +372,18 @@ class Dis2pmTrainingPlan(TrainingPlan):  # we should add more explanation
                 },
             )
 
-        params2 = filter(
-            lambda p: p.requires_grad, self.adv_clf_list.parameters()
-        )
+        params2 = list(filter(
+            lambda p: p.requires_grad, self.adv_clf_list.parameters()  
+        ))
+        params2_acc = list(filter(
+            lambda p: p.requires_grad, self.adv_clf_list_acc.parameters()  
+        ))
+
+        # print(f'type(params2) is {type(params2)}')
+        # print(type(params2_acc))
+        
         optimizer2 = torch.optim.Adam(
-            params2, lr=1e-3, eps=0.01, weight_decay=self.weight_decay
+            params2+params2_acc, lr=1e-3, eps=0.01, weight_decay=self.weight_decay
         )
         config2 = {"optimizer": optimizer2}
 
