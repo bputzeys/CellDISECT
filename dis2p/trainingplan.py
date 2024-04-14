@@ -221,7 +221,7 @@ class Dis2pTrainingPlan(TrainingPlan):
         if "kl_weight" in self.loss_kwargs:
             self.loss_kwargs.update({"kl_weight": self.kl_weight})
         kappa = (
-            1 - self.kl_weight
+            self.kl_weight
             if self.scale_adversarial_loss == "auto"
             else self.scale_adversarial_loss
         )
