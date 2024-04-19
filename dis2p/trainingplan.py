@@ -88,6 +88,7 @@ class Dis2pTrainingPlan(TrainingPlan):
         lr_scheduler_metric: Literal["loss_validation"] = "loss_validation",
         lr_min: float = 0,
         scale_adversarial_loss: Union[float, Literal["auto"]] = "auto",
+        new_cf_method: bool = False, # CHANGE LATER
         **loss_kwargs,
     ):
         super().__init__(
@@ -112,7 +113,9 @@ class Dis2pTrainingPlan(TrainingPlan):
         self.loss_kwargs.update({"cf_weight": cf_weight,
                                  "beta": beta,
                                  "clf_weight": clf_weight,
-                                 "n_cf": n_cf})
+                                 "n_cf": n_cf,
+                                 "new_cf_method": new_cf_method, # CHANGE LATER
+                                })
 
         self.module = module
         self.zs_num = module.zs_num
