@@ -96,7 +96,7 @@ class Dis2pVAE_cE(BaseModuleClass):
         # Automatically deactivate if useless
         self.latent_distribution = latent_distribution
 
-        self.px_r = torch.nn.Parameter(torch.randn(n_input)).to(device)
+        self.px_r = torch.nn.Parameter(torch.randn(n_input, device=device))
 
         use_batch_norm_encoder = use_batch_norm == "encoder" or use_batch_norm == "both"
         use_batch_norm_decoder = use_batch_norm == "decoder" or use_batch_norm == "both"
@@ -470,6 +470,257 @@ class Dis2pVAE_cE(BaseModuleClass):
 
         return logits
 
+
+    def sub_forward_cf(
+                    self, 
+                    idx,
+                    x, 
+                    cat_covs,
+                    cat_covs_cf=None,
+                    detach_x=False,
+                    detach_z=False):
+        """
+        performs forward (inference + generative) only on enc/dec idx
+        Explaination:
+            I need to write a good explaination here later, because it's a little confusing. #TODO
+            
+        Parameters
+        ----------
+        idx
+            index of enc/dec in [1, ..., self.zs_num]
+        x
+        cat_covs
+        detach_x
+        detach_z
+
+        """
+        x_ = x
+        if detach_x:
+            x_ = x.detach()
+
+        library = torch.log(x_.sum(1)).unsqueeze(1)
+        if self.log_variational:
+            x_ = torch.log(1 + x_)
+
+        emb = []
+        for i, embedding in enumerate(cat_covs.t()):
+            emb.append(self.covars_embeddings[str(i)](embedding.long()))
+        emb = torch.stack(emb, dim=0)
+        full_embs_ubd = emb.clone() # unique_covs x batch_size x emb_dim
+        emb = torch.permute(emb, (1, 0, 2))
+        emb = self.pert_encoder(emb)
+        emb = emb.reshape(emb.shape[0], -1)
+
+        qz, z = (self.z_encoders_list[idx](torch.hstack((x_, emb))))
+        
+        if detach_z:
+            z = z.detach()
+
+        if cat_covs_cf is None:
+            cov_indices = list(set(list(range(self.zs_num)))-set([idx-1]))
+            ith_emb = full_embs_ubd[cov_indices, :, :]
+            ith_emb = torch.permute(ith_emb, (1, 0, 2))
+            ith_emb = self.pert_encoder(ith_emb)
+            ith_emb = ith_emb.reshape(ith_emb.shape[0], -1)
+        else:
+            ith_emb = []
+            for i, embedding in enumerate(cat_covs_cf.t()):
+                if i == idx-1:
+                    continue
+                ith_emb.append(self.covars_embeddings[str(i)](embedding.long()))
+            ith_emb = torch.stack(ith_emb, dim=0)
+            ith_emb = torch.permute(ith_emb, (1, 0, 2))
+            ith_emb = self.pert_encoder(ith_emb)
+            ith_emb = ith_emb.reshape(ith_emb.shape[0], -1)
+
+        x_decoder = self.x_decoders_list[idx]
+
+        px_scale, px_r, px_rate, px_dropout = x_decoder(
+            self.dispersion,
+            torch.hstack((z, ith_emb)),
+            library,
+            # *dec_cats
+        )
+        px_r = torch.exp(self.px_r)
+        cf_difference = (cat_covs == cat_covs_cf).to(device) 
+        px_scale = px_scale[cf_difference[:, idx-1]]
+        px_rate = px_rate[cf_difference[:, idx-1]]
+        px_dropout = px_dropout[cf_difference[:, idx-1]]
+        if px_scale.shape[0] == 0:
+            return None
+
+        if self.gene_likelihood == "zinb":
+            px = ZeroInflatedNegativeBinomial(
+                mu=px_rate,
+                theta=px_r,
+                zi_logits=px_dropout,
+                scale=px_scale,
+            )
+        elif self.gene_likelihood == "nb":
+            px = NegativeBinomial(mu=px_rate, theta=px_r, scale=px_scale)
+        elif self.gene_likelihood == "poisson":
+            px = Poisson(px_rate, scale=px_scale)
+        return px
+
+
+    def sub_forward_cf_z0(self,
+                    x,
+                    cat_covs,
+                    cat_covs_cf=None,
+                    detach_x=False,
+                    detach_z=False):
+        """
+
+        performs forward (inference + generative) only on enc/dec 0
+
+        Parameters
+        ----------
+        x
+        cat_covs
+        detach_x
+        detach_z
+
+        """
+        x_ = x
+        if detach_x:
+            x_ = x.detach()
+
+        library = torch.log(x_.sum(1)).unsqueeze(1)
+        if self.log_variational:
+            x_ = torch.log(1 + x_)
+        
+        emb = []
+        for i, embedding in enumerate(cat_covs.t()):
+            emb.append(self.covars_embeddings[str(i)](embedding.long()))
+        emb = torch.stack(emb, dim=0)
+        full_embs_ubd = emb.clone() # unique_covs x batch_size x emb_dim
+        emb = torch.permute(emb, (1, 0, 2))
+        emb = self.pert_encoder(emb)
+        emb = emb.reshape(emb.shape[0], -1)
+        
+        qz, z = (self.z_encoders_list[0](torch.hstack((x_, emb)))) # z0
+        
+        if detach_z:
+            z = z.detach()
+
+        if cat_covs_cf is None:
+            cov_indices = list(set(list(range(self.zs_num))))
+            ith_emb = full_embs_ubd[cov_indices, :, :]
+            ith_emb = torch.permute(ith_emb, (1, 0, 2))
+            ith_emb = self.pert_encoder(ith_emb)
+            ith_emb = ith_emb.reshape(ith_emb.shape[0], -1)
+        else:
+            ith_emb = []
+            for i, embedding in enumerate(cat_covs_cf.t()):
+                ith_emb.append(self.covars_embeddings[str(i)](embedding.long()))
+            ith_emb = torch.stack(ith_emb, dim=0)
+            ith_emb = torch.permute(ith_emb, (1, 0, 2))
+            ith_emb = self.pert_encoder(ith_emb)
+            ith_emb = ith_emb.reshape(ith_emb.shape[0], -1)    
+
+        x_decoder = self.x_decoders_list[0]
+
+        px_scale, px_r, px_rate, px_dropout = x_decoder(
+            self.dispersion,
+            torch.hstack((z, ith_emb)),
+            library,
+            # *dec_cats
+        )
+        px_r = torch.exp(self.px_r)
+
+        if self.gene_likelihood == "zinb":
+            px = ZeroInflatedNegativeBinomial(
+                mu=px_rate,
+                theta=px_r,
+                zi_logits=px_dropout,
+                scale=px_scale,
+            )
+        elif self.gene_likelihood == "nb":
+            px = NegativeBinomial(mu=px_rate, theta=px_r, scale=px_scale)
+        elif self.gene_likelihood == "poisson":
+            px = Poisson(px_rate, scale=px_scale)
+        return px
+
+    # def sub_forward_cf_avg(
+    #         self,
+    #         idx,
+    #         x,
+    #         cat_covs,
+    #         cat_covs_cf=None,
+    #         detach_x=False,
+    #         detach_z=False):
+    #     """
+
+    #     performs forward (inference + generative) only on enc/dec 0
+
+    #     Parameters
+    #     ----------
+    #     idx
+    #         index of counterfactual covariate [0, ..., self.zs_num-1]
+    #     x
+    #     cat_covs
+    #     detach_x
+    #     detach_z
+
+    #     """
+    #     xs = []
+    #     pxs = []
+    #     for i in range(self.zs_num):
+    #         if i == idx:
+    #             continue
+    #         else:
+    #             px = self.sub_forward(i+1, x, cat_covs, cat_covs_cf, detach_x, detach_z)
+    #             pxs.append(px)
+    #             xs.append(px.mean)
+    #     px = self.sub_forward_cf_z0(x, cat_covs, cat_covs_cf, detach_x, detach_z)
+    #     pxs.append(px)
+    #     xs.append(px.mean)
+
+    #     x_avg = torch.mean(torch.stack(xs), dim=0)
+    #     return pxs, x_avg
+    def sub_forward_cf_avg(
+            self,
+            x,
+            cat_covs,
+            cat_covs_cf=None,
+            detach_x=False,
+            detach_z=False):
+        """
+
+        performs forward (inference + generative) only on enc/dec 0
+
+        Parameters
+        ----------
+        idx
+            index of counterfactual covariate [0, ..., self.zs_num-1]
+        x
+        cat_covs
+        detach_x
+        detach_z
+
+        """
+        cf_difference = (cat_covs == cat_covs_cf).to(device)
+        xs = []
+        pxs = []
+
+        for i in range(self.zs_num):
+            px = self.sub_forward_cf(i+1, x, cat_covs, cat_covs_cf, detach_x, detach_z)
+            pxs.append(px)
+            if px is None:
+                continue
+            xs.append(px.mean)
+            # x_cf = px.mean
+            # # Just keep the rows in x_cf that are True in cf_difference[:, i]
+            # x_cf = x_cf[cf_difference[:, i]]
+            # xs.append(x_cf)
+        px = self.sub_forward_cf_z0(x, cat_covs, cat_covs_cf, detach_x, detach_z)
+        pxs.append(px)
+        xs.append(px.mean)
+
+        x_avg = torch.mean(torch.cat(xs), dim=0)
+        return x_avg, pxs
+
+
     def compute_clf_metrics(self, logits, cat_covs):
         # CE, ACC, F1
         cats = torch.split(cat_covs, 1, dim=1)
@@ -486,11 +737,11 @@ class Dis2pVAE_cE(BaseModuleClass):
             F1 = F1Score(**kwargs).to(device)
             f1_scores.append(F1(predicted_labels, cats[i]).to(device))
 
-        ce_loss_sum = sum(torch.mean(ce) for ce in ce_losses)
+        ce_loss_mean = sum(ce_losses) / len(ce_losses)
         accuracy = sum(accuracy_scores) / len(accuracy_scores)
         f1 = sum(f1_scores) / len(f1_scores)
 
-        return ce_loss_sum, accuracy, f1
+        return ce_loss_mean, accuracy, f1
 
     def loss(
             self,
@@ -502,6 +753,7 @@ class Dis2pVAE_cE(BaseModuleClass):
             clf_weight: Tunable[Union[float, int]],  # Si classifier weight
             n_cf: Tunable[int],  # number of X_cf recons (X_cf = a random permutation of X)
             kl_weight: float = 1.0,
+            new_cf_method=True, # CHANGE LATER
     ):
         # reconstruction loss X
 
@@ -509,7 +761,7 @@ class Dis2pVAE_cE(BaseModuleClass):
 
         reconst_loss_x_list = [-torch.mean(px.log_prob(x).sum(-1)) for px in generative_outputs["px"]]
         reconst_loss_x_dict = {'x_' + str(i): reconst_loss_x_list[i] for i in range(len(reconst_loss_x_list))}
-        reconst_loss_x = sum(reconst_loss_x_list)
+        reconst_loss_x = sum(reconst_loss_x_list) / len(reconst_loss_x_list)
 
         # reconstruction loss X'
 
@@ -538,16 +790,30 @@ class Dis2pVAE_cE(BaseModuleClass):
             perm = list(range(self.zs_num))
             random.shuffle(perm)
 
-            for idx in perm:
-                # cat_cov_[idx] (possibly) changes to cat_cov_cf[idx]
-                cat_cov_split = list(torch.split(cat_cov_, 1, dim=1))
-                cat_cov_split[idx] = cat_cov_cf_split[idx]
-                cat_cov_ = torch.cat(cat_cov_split, dim=1)
-                # use enc/dec idx+1 to get px_ and feed px_.mean as the next x_
-                px_ = self.sub_forward(idx + 1, x_, cat_cov_)
-                x_ = px_.mean
+            if new_cf_method:
+                cf_difference = (cat_covs == cat_cov_cf).to(device)
+                # Add one column of all True to the end of cf_difference
+                cf_difference = torch.cat([cf_difference, torch.ones_like(cf_difference[:, 0]).unsqueeze(1)], dim=1).type(torch.bool)
+                _, pxs = self.sub_forward_cf_avg(x_, cat_cov_, cat_cov_cf)
 
-            reconst_loss_x_cf_list.append(-torch.mean(px_.log_prob(x_cf).sum(-1)))
+                log_probs = [px_.log_prob(x_cf[cf_difference[:, i]])
+                             for i, px_ in enumerate(pxs) if px_ is not None]
+                probs = [torch.exp(log_prob) for log_prob in log_probs]
+                mean_probs = torch.mean(torch.cat(probs), dim=0)
+                nll = -torch.log(mean_probs)
+                reconst_loss_x_cf_list.append(torch.mean(nll))
+                
+            else:
+                for idx in perm:
+                    # cat_cov_[idx] (possibly) changes to cat_cov_cf[idx]
+                    cat_cov_split = list(torch.split(cat_cov_, 1, dim=1))
+                    cat_cov_split[idx] = cat_cov_cf_split[idx]
+                    cat_cov_ = torch.cat(cat_cov_split, dim=1)
+                    # use enc/dec idx+1 to get px_ and feed px_.mean as the next x_
+                    px_ = self.sub_forward(idx + 1, x_, cat_cov_)
+                    x_ = px_.mean
+
+                reconst_loss_x_cf_list.append(-torch.mean(px_.log_prob(x_cf).sum(-1)))
 
         reconst_loss_x_cf = sum(reconst_loss_x_cf_list) / n_cf
 
@@ -557,18 +823,18 @@ class Dis2pVAE_cE(BaseModuleClass):
                      zip(inference_outputs["qzs"], inference_outputs["qzs_prior"])]
 
         kl_z_dict = {'z_' + str(i+1): kl_z_list[i] for i in range(len(kl_z_list))}
+        kl_loss = sum(kl_z_list) / len(kl_z_list)
 
         # classification metrics: CE, ACC, F1
 
         logits = self.classification_logits(inference_outputs)
-        ce_loss_sum, accuracy, f1 = self.compute_clf_metrics(logits, cat_covs)
-        ce_loss_mean = ce_loss_sum / len(range(self.zs_num))
+        ce_loss_mean, accuracy, f1 = self.compute_clf_metrics(logits, cat_covs)
 
         # total loss
         loss = reconst_loss_x + \
                reconst_loss_x_cf * cf_weight + \
-               sum(kl_z_list) * kl_weight * beta + \
-               ce_loss_sum * clf_weight
+               kl_loss * kl_weight * beta + \
+               ce_loss_mean * clf_weight
 
         loss_dict = {
             LOSS_KEYS.LOSS: loss,

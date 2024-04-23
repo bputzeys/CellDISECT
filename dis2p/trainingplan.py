@@ -88,6 +88,7 @@ class Dis2pTrainingPlan(TrainingPlan):
         lr_scheduler_metric: Literal["loss_validation"] = "loss_validation",
         lr_min: float = 0,
         scale_adversarial_loss: Union[float, Literal["auto"]] = "auto",
+        new_cf_method: bool = False, # CHANGE LATER
         **loss_kwargs,
     ):
         super().__init__(
@@ -112,7 +113,9 @@ class Dis2pTrainingPlan(TrainingPlan):
         self.loss_kwargs.update({"cf_weight": cf_weight,
                                  "beta": beta,
                                  "clf_weight": clf_weight,
-                                 "n_cf": n_cf})
+                                 "n_cf": n_cf,
+                                 "new_cf_method": new_cf_method, # CHANGE LATER
+                                })
 
         self.module = module
         self.zs_num = module.zs_num
@@ -247,8 +250,8 @@ class Dis2pTrainingPlan(TrainingPlan):
 
             # fool classifier if doing adversarial training
             if kappa > 0:
-                ce_loss_sum, accuracy, f1 = self.adv_classifier_metrics(inference_outputs, False)
-                loss -= ce_loss_sum * kappa * self.adv_clf_weight
+                ce_loss_mean, accuracy, f1 = self.adv_classifier_metrics(inference_outputs, False)
+                loss -= ce_loss_mean * kappa * self.adv_clf_weight
 
             opt1.zero_grad()
             self.manual_backward(loss)
@@ -257,13 +260,12 @@ class Dis2pTrainingPlan(TrainingPlan):
         # train adversarial classifier
         if opt2 is not None:
 
-            ce_loss_sum, accuracy, f1 = self.adv_classifier_metrics(inference_outputs, True)
-            ce_loss_sum *= kappa
+            ce_loss_mean, accuracy, f1 = self.adv_classifier_metrics(inference_outputs, True)
+            ce_loss_mean *= kappa
             opt2.zero_grad()
-            self.manual_backward(ce_loss_sum)
+            self.manual_backward(ce_loss_mean)
             opt2.step()
 
-        ce_loss_mean = ce_loss_sum / len(range(self.zs_num))
         losses.update({'adv_ce': ce_loss_mean, 'adv_acc': accuracy, 'adv_f1': f1})
 
         self.compute_and_log_metrics(losses, self.train_metrics, "train")
@@ -280,9 +282,8 @@ class Dis2pTrainingPlan(TrainingPlan):
             batch, loss_kwargs=input_kwargs
         )
 
-        ce_loss_sum, accuracy, f1 = self.adv_classifier_metrics(inference_outputs, True)
+        ce_loss_mean, accuracy, f1 = self.adv_classifier_metrics(inference_outputs, True)
 
-        ce_loss_mean = ce_loss_sum / len(range(self.zs_num))
         losses.update({'adv_ce': ce_loss_mean, 'adv_acc': accuracy, 'adv_f1': f1})
 
         self.compute_and_log_metrics(losses, self.val_metrics, "validation")
