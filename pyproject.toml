@@ -2,7 +2,7 @@
 name = "dis2p"
 version = "0.0.1"
 description = "To be added."
-authors = [""]
+authors = ["First Last <name@example.com>"]
 license = "MIT"
 readme = "README.md"
 packages = [
