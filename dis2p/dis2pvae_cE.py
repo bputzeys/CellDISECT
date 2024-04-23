@@ -753,7 +753,7 @@ class Dis2pVAE_cE(BaseModuleClass):
             clf_weight: Tunable[Union[float, int]],  # Si classifier weight
             n_cf: Tunable[int],  # number of X_cf recons (X_cf = a random permutation of X)
             kl_weight: float = 1.0,
-            new_cf_method=False, # CHANGE LATER
+            new_cf_method=True, # CHANGE LATER
     ):
         # reconstruction loss X
 
