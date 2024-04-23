@@ -7,12 +7,14 @@ If you have installed an older version of dis2p, uninstall it
 ```
 pip uninstall dis2p
 ```
-Download the requirements.txt file and install the required packages 
+
+Install pytorch (This version of dis2p is tested with pytorch 2.0.0 and cuda 11.7, install the appropriate version of pytorch for your system.)
 ```
-pip install -r requirements.txt
+conda install pytorch==2.0.0 torchvision==0.15.0 torchaudio==2.0.0 pytorch-cuda=11.7 -c pytorch -c nvidia
 ```
-Install dis2p 
+
+Install the latest version of dis2p
 ```
-pip install git+https://github.com/Lotfollahi-lab/dis2p.git
+pip install git+https://github.com/Lotfollahi-lab/dis2p
 ```
 
