@@ -88,7 +88,7 @@ class Dis2pTrainingPlan(TrainingPlan):
         lr_scheduler_metric: Literal["loss_validation"] = "loss_validation",
         lr_min: float = 0,
         scale_adversarial_loss: Union[float, Literal["auto"]] = "auto",
-        new_cf_method: bool = False, # CHANGE LATER
+        new_cf_method: bool = True, # CHANGE LATER
         **loss_kwargs,
     ):
         super().__init__(
@@ -242,7 +242,8 @@ class Dis2pTrainingPlan(TrainingPlan):
         inference_outputs, _, losses = self.forward(
             batch, loss_kwargs=input_kwargs
         )
-
+        # Log kappa
+        self.log("kl_weight", kappa, on_step=False, on_epoch=True)
         # train normally
         if (self.current_epoch % self.adv_period == 0):
 
@@ -286,6 +287,7 @@ class Dis2pTrainingPlan(TrainingPlan):
 
         losses.update({'adv_ce': ce_loss_mean, 'adv_acc': accuracy, 'adv_f1': f1})
 
+        
         self.compute_and_log_metrics(losses, self.val_metrics, "validation")
 
         return losses
@@ -308,6 +310,13 @@ class Dis2pTrainingPlan(TrainingPlan):
         else:
             sch = self.lr_schedulers()
             sch.step(self.trainer.callback_metrics[self.lr_scheduler_metric])
+            # Log learning rate
+            self.log(
+                "learning_rate",
+                sch.optimizer.param_groups[0]["lr"],
+                on_step=False,
+                on_epoch=True,
+            )
 
     def configure_optimizers(self):
         """Configure optimizers for adversarial training."""

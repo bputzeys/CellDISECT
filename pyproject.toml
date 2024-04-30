@@ -11,19 +11,18 @@ packages = [
 
 [tool.poetry.dependencies]
 python = ">=3.9, <3.11"
-llvmlite = "^0.41"
+llvmlite = "^0.42"
 anndata = ">=0.9.0, <0.10.0"
 scvi-tools = ">=0.20.3,<1.0.0"
 importlib-metadata = "*"
 scanpy = "*"
-torch = { version = ">1.8.0,<=2.0.1" }
+torch = { version = ">=2.1.0, <2.2.0"}
 adjustText = "*"
-numpy = '>=1.22.4,<1.24'
+numpy = '>=1.26.3, <1.27.0'
 seaborn = "*"
 gdown = "*"
 jax = ">=0.4.16, <0.4.24"
 jaxlib = ">=0.4.16, <0.4.24"
-torchaudio = ">2.0.0,<=2.0.1"
 lightning = ">=2.2.0, <2.3.0"
 scib-metrics = ">=0.5.1, <0.6.0"
 scib = ">=1.1.5, <1.2.0"

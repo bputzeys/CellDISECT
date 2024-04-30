@@ -378,6 +378,16 @@ class Dis2pVI_cE(
         trainer_kwargs[es] = (
             early_stopping if es not in trainer_kwargs.keys() else trainer_kwargs[es]
         )
+
+        if save_best:
+            checkpoint = SaveBestState(
+                monitor="loss_validation", mode="min", period=1, verbose=True
+            )
+            trainer_kwargs["callbacks"] = [] if "callbacks" not in trainer_kwargs else trainer_kwargs["callbacks"]
+            trainer_kwargs["callbacks"].append(checkpoint)
+        
+        trainer_kwargs['enable_checkpointing'] = True
+
         trainer_kwargs['early_stopping_monitor'] = "loss_validation"
         runner = self._train_runner_cls(
             self,

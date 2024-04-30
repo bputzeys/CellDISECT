@@ -13,6 +13,8 @@ from scvi.distributions import NegativeBinomial, Poisson, ZeroInflatedNegativeBi
 from scvi.module.base import BaseModuleClass, auto_move_data
 from scvi.nn import DecoderSCVI, Encoder
 
+from sklearn.metrics import r2_score
+
 torch.backends.cudnn.benchmark = True
 from .utils import *
 from scvi.module._classifier import Classifier
@@ -96,7 +98,7 @@ class Dis2pVAE_cE(BaseModuleClass):
         # Automatically deactivate if useless
         self.latent_distribution = latent_distribution
 
-        self.px_r = torch.nn.Parameter(torch.randn(n_input, device=device))
+        self.px_r = torch.nn.Parameter(torch.randn(n_input))
 
         use_batch_norm_encoder = use_batch_norm == "encoder" or use_batch_norm == "both"
         use_batch_norm_decoder = use_batch_norm == "decoder" or use_batch_norm == "both"
@@ -796,12 +798,23 @@ class Dis2pVAE_cE(BaseModuleClass):
                 cf_difference = torch.cat([cf_difference, torch.ones_like(cf_difference[:, 0]).unsqueeze(1)], dim=1).type(torch.bool)
                 _, pxs = self.sub_forward_cf_avg(x_, cat_cov_, cat_cov_cf)
 
-                log_probs = [px_.log_prob(x_cf[cf_difference[:, i]])
-                             for i, px_ in enumerate(pxs) if px_ is not None]
-                probs = [torch.exp(log_prob) for log_prob in log_probs]
-                mean_probs = torch.mean(torch.cat(probs), dim=0)
-                nll = -torch.log(mean_probs)
-                reconst_loss_x_cf_list.append(torch.mean(nll))
+                reconst_loss_x_cf_list_n = [-torch.mean(px_.log_prob(x_cf[cf_difference[:, i]]).sum(-1)) 
+                                          for i, px_ in enumerate(pxs) if px_ is not None]
+                reconst_loss_x_cf_list.append(sum(reconst_loss_x_cf_list_n) / len(reconst_loss_x_cf_list_n))
+#                 log_probs = [px_.log_prob(x_cf[cf_difference[:, i]])
+#                              for i, px_ in enumerate(pxs) if px_ is not None]
+#                 print(log_probs[0].shape)
+#                 probs = [torch.exp(log_prob) for log_prob in log_probs]
+#                 print(probs[0].shape)
+                
+#                 mean_probs = torch.mean(torch.cat(probs), dim=0)
+#                 print(torch.cat(probs).shape)
+#                 print(mean_probs.shape)
+#                 nll = -torch.log(mean_probs)
+#                 print(nll.shape)
+#                 print(torch.mean(nll).shape)
+#                 print()
+#                 reconst_loss_x_cf_list.append(torch.mean(nll))
                 
             else:
                 for idx in perm:
@@ -831,7 +844,7 @@ class Dis2pVAE_cE(BaseModuleClass):
         ce_loss_mean, accuracy, f1 = self.compute_clf_metrics(logits, cat_covs)
 
         # total loss
-        loss = reconst_loss_x + \
+        loss = reconst_loss_x * 0.01 + \
                reconst_loss_x_cf * cf_weight + \
                kl_loss * kl_weight * beta + \
                ce_loss_mean * clf_weight
