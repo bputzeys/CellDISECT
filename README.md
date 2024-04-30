@@ -18,9 +18,9 @@ Then, you can activate the environment using:
     conda activate dis2p
 
 
-Install pytorch (This version of dis2p is tested with pytorch 2.0.0 and cuda 11.7, install the appropriate version of pytorch for your system.)
+Install pytorch (This version of dis2p is tested with pytorch 2.1.0 and cuda 11.8, install the appropriate version of pytorch for your system.)
 ```
-conda install pytorch==2.0.0 torchvision==0.15.0 torchaudio==2.0.0 pytorch-cuda=11.7 -c pytorch -c nvidia
+pip install torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 --index-url https://download.pytorch.org/whl/cu118
 ```
 
 Install the latest version of dis2p
