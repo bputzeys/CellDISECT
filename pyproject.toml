@@ -49,6 +49,7 @@ typing_extensions = "*"
 sphinx-autodoc-typehints = "*"
 sphinx_gallery = "*"
 sphinx-rtd-theme = "*"
+wandb = "*"
 
 
 [tool.poetry.extras]

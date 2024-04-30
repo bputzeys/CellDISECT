@@ -18,10 +18,22 @@ Then, you can activate the environment using:
     conda activate dis2p
 
 
-Install pytorch (This version of dis2p is tested with pytorch 2.0.0 and cuda 11.7, install the appropriate version of pytorch for your system.)
+Install pytorch (This version of dis2p is tested with pytorch 2.1.0 and cuda 12, install the appropriate version of pytorch for your system.)
 ```
-conda install pytorch==2.0.0 torchvision==0.15.0 torchaudio==2.0.0 pytorch-cuda=11.7 -c pytorch -c nvidia
+pip install torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 --index-url https://download.pytorch.org/whl/cu121
 ```
+
+Install RAPIDS
+``
+pip install \
+    --extra-index-url=https://pypi.nvidia.com \
+    cudf-cu12==24.4.* dask-cudf-cu12==24.4.* cuml-cu12==24.4.* \
+    cugraph-cu12==24.4.* cuspatial-cu12==24.4.* cuproj-cu12==24.4.* \
+    cuxfilter-cu12==24.4.* cucim-cu12==24.4.* pylibraft-cu12==24.4.* \
+    raft-dask-cu12==24.4.* cuvs-cu12==24.4.*
+
+conda install cudatoolkit
+``
 
 Install the latest version of dis2p
 ```
