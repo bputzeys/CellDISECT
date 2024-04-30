@@ -1,4 +1,5 @@
 import logging
+from re import L
 from typing import List, Literal, Optional, Sequence, Tuple, Union
 
 import numpy as np
@@ -281,6 +282,23 @@ class Dis2pVI_cE(
             latent += [outputs["z_concat"].cpu()]
 
         return torch.cat(latent).numpy()
+
+    @torch.no_grad()
+    def get_cat_covariate_latents(
+            self,
+    ):
+        """Returns the embeddings of the categorical covariates."""
+        self._check_if_trained(warn=False)
+        covar_names = self.adata_manager.get_state_registry(REGISTRY_KEYS.CAT_COVS_KEY).values()[0]
+        
+        covar_embeddings = {}
+        covar_mappings = {}
+        for name, emb in zip(covar_names, self.module.covars_embeddings.values()):
+            mappings = self.adata_manager.get_state_registry(REGISTRY_KEYS.CAT_COVS_KEY)['mappings'][name]
+            covar_embeddings[name] = emb.weight.cpu().detach().numpy()
+            covar_mappings[name] = mappings
+        
+        return covar_embeddings, covar_mappings
 
     # @devices_dsp.dedent
     def train(
