@@ -16,7 +16,7 @@ anndata = ">=0.9.0, <0.10.0"
 scvi-tools = ">=0.20.3,<1.0.0"
 importlib-metadata = "*"
 scanpy = "*"
-torch = { version = ">=2.1.0, <2.2.0"}
+torch = { version = ">=2.1.0, <2.3.0"}
 adjustText = "*"
 numpy = '>=1.26.3, <1.27.0'
 seaborn = "*"
