@@ -24,7 +24,7 @@ pip install torch==2.2.2 torchvision==0.17.2 torchaudio==2.2.2 --index-url https
 ```
 
 Install RAPIDS
-``
+```
 pip install \
     --extra-index-url=https://pypi.nvidia.com \
     cudf-cu12==24.4.* dask-cudf-cu12==24.4.* cuml-cu12==24.4.* \
@@ -33,7 +33,7 @@ pip install \
     raft-dask-cu12==24.4.* cuvs-cu12==24.4.*
 
 conda install cudatoolkit
-``
+```
 
 Install the latest version of dis2p
 ```
