@@ -1,4 +1,5 @@
 import logging
+from re import L
 from typing import List, Literal, Optional, Sequence, Tuple, Union
 
 import numpy as np
@@ -282,6 +283,23 @@ class Dis2pVI_cE(
 
         return torch.cat(latent).numpy()
 
+    @torch.no_grad()
+    def get_cat_covariate_latents(
+            self,
+    ):
+        """Returns the embeddings of the categorical covariates."""
+        self._check_if_trained(warn=False)
+        covar_names = self.adata_manager.get_state_registry(REGISTRY_KEYS.CAT_COVS_KEY).values()[0]
+        
+        covar_embeddings = {}
+        covar_mappings = {}
+        for name, emb in zip(covar_names, self.module.covars_embeddings.values()):
+            mappings = self.adata_manager.get_state_registry(REGISTRY_KEYS.CAT_COVS_KEY)['mappings'][name]
+            covar_embeddings[name] = emb.weight.cpu().detach().numpy()
+            covar_mappings[name] = mappings
+        
+        return covar_embeddings, covar_mappings
+
     # @devices_dsp.dedent
     def train(
             self,
@@ -378,6 +396,16 @@ class Dis2pVI_cE(
         trainer_kwargs[es] = (
             early_stopping if es not in trainer_kwargs.keys() else trainer_kwargs[es]
         )
+
+        if save_best:
+            checkpoint = SaveBestState(
+                monitor="loss_validation", mode="min", period=1, verbose=True
+            )
+            trainer_kwargs["callbacks"] = [] if "callbacks" not in trainer_kwargs else trainer_kwargs["callbacks"]
+            trainer_kwargs["callbacks"].append(checkpoint)
+        
+        trainer_kwargs['enable_checkpointing'] = True
+
         trainer_kwargs['early_stopping_monitor'] = "loss_validation"
         runner = self._train_runner_cls(
             self,

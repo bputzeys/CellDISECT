@@ -13,6 +13,8 @@ from scvi.distributions import NegativeBinomial, Poisson, ZeroInflatedNegativeBi
 from scvi.module.base import BaseModuleClass, auto_move_data
 from scvi.nn import DecoderSCVI, Encoder
 
+from sklearn.metrics import r2_score
+
 torch.backends.cudnn.benchmark = True
 from .utils import *
 from scvi.module._classifier import Classifier
@@ -96,7 +98,7 @@ class Dis2pVAE_cE(BaseModuleClass):
         # Automatically deactivate if useless
         self.latent_distribution = latent_distribution
 
-        self.px_r = torch.nn.Parameter(torch.randn(n_input, device=device))
+        self.px_r = torch.nn.Parameter(torch.randn(n_input))
 
         use_batch_norm_encoder = use_batch_norm == "encoder" or use_batch_norm == "both"
         use_batch_norm_decoder = use_batch_norm == "decoder" or use_batch_norm == "both"
