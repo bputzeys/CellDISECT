@@ -719,7 +719,7 @@ class Dis2pVAE_cE(BaseModuleClass):
 
         x = tensors[REGISTRY_KEYS.X_KEY]
 
-        reconst_loss_x_list = [-torch.mean(px.log_prob(x).sum(-1)) for px in generative_outputs["px"]]
+        reconst_loss_x_list = [-torch.mean(px.log_prob(x).mean(-1)) for px in generative_outputs["px"]]
         reconst_loss_x_dict = {'x_' + str(i): reconst_loss_x_list[i] for i in range(len(reconst_loss_x_list))}
         reconst_loss_x = sum(reconst_loss_x_list) / len(reconst_loss_x_list)
 
