@@ -1,5 +1,5 @@
 import random
-from typing import Callable, Iterable, Literal, Optional, Union, Tuple
+from typing import Callable, Iterable, Literal, Optional, Union
 
 import torch
 import torch.nn.functional as F
@@ -12,8 +12,6 @@ from scvi.autotune._types import Tunable
 from scvi.distributions import NegativeBinomial, Poisson, ZeroInflatedNegativeBinomial
 from scvi.module.base import BaseModuleClass, auto_move_data
 from scvi.nn import DecoderSCVI, Encoder
-
-from sklearn.metrics import r2_score
 
 torch.backends.cudnn.benchmark = True
 from .utils import *
@@ -643,43 +641,7 @@ class Dis2pVAE_cE(BaseModuleClass):
             px = Poisson(px_rate, scale=px_scale)
         return px
 
-    # def sub_forward_cf_avg(
-    #         self,
-    #         idx,
-    #         x,
-    #         cat_covs,
-    #         cat_covs_cf=None,
-    #         detach_x=False,
-    #         detach_z=False):
-    #     """
 
-    #     performs forward (inference + generative) only on enc/dec 0
-
-    #     Parameters
-    #     ----------
-    #     idx
-    #         index of counterfactual covariate [0, ..., self.zs_num-1]
-    #     x
-    #     cat_covs
-    #     detach_x
-    #     detach_z
-
-    #     """
-    #     xs = []
-    #     pxs = []
-    #     for i in range(self.zs_num):
-    #         if i == idx:
-    #             continue
-    #         else:
-    #             px = self.sub_forward(i+1, x, cat_covs, cat_covs_cf, detach_x, detach_z)
-    #             pxs.append(px)
-    #             xs.append(px.mean)
-    #     px = self.sub_forward_cf_z0(x, cat_covs, cat_covs_cf, detach_x, detach_z)
-    #     pxs.append(px)
-    #     xs.append(px.mean)
-
-    #     x_avg = torch.mean(torch.stack(xs), dim=0)
-    #     return pxs, x_avg
     def sub_forward_cf_avg(
             self,
             x,
@@ -701,7 +663,6 @@ class Dis2pVAE_cE(BaseModuleClass):
         detach_z
 
         """
-        cf_difference = (cat_covs == cat_covs_cf).to(device)
         xs = []
         pxs = []
 
@@ -711,10 +672,7 @@ class Dis2pVAE_cE(BaseModuleClass):
             if px is None:
                 continue
             xs.append(px.mean)
-            # x_cf = px.mean
-            # # Just keep the rows in x_cf that are True in cf_difference[:, i]
-            # x_cf = x_cf[cf_difference[:, i]]
-            # xs.append(x_cf)
+
         px = self.sub_forward_cf_z0(x, cat_covs, cat_covs_cf, detach_x, detach_z)
         pxs.append(px)
         xs.append(px.mean)
