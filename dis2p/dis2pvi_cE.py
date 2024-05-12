@@ -311,6 +311,7 @@ class Dis2pVI_cE(
             early_stopping: bool = True,
             save_best: bool = False,
             plan_kwargs: Optional[dict] = None,
+            recon_weight: Tunable[Union[float, int]] = 10, # RECONST_LOSS_X weight
             cf_weight: Tunable[Union[float, int]] = 1,  # RECONST_LOSS_X_CF weight
             beta: Tunable[Union[float, int]] = 1,  # KL Zi weight
             clf_weight: Tunable[Union[float, int]] = 50,  # Si classifier weight
@@ -384,6 +385,7 @@ class Dis2pVI_cE(
             )
             
         training_plan = self._training_plan_cls(self.module,
+                                                recon_weight=recon_weight,
                                                 cf_weight=cf_weight,
                                                 beta=beta,
                                                 clf_weight=clf_weight,
