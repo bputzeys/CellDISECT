@@ -708,6 +708,7 @@ class Dis2pVAE_cE(BaseModuleClass):
             tensors,
             inference_outputs,
             generative_outputs,
+            recon_weight: Tunable[Union[float, int]], # RECONST_LOSS_X weight
             cf_weight: Tunable[Union[float, int]],  # RECONST_LOSS_X_CF weight
             beta: Tunable[Union[float, int]],  # KL Zi weight
             clf_weight: Tunable[Union[float, int]],  # Si classifier weight
@@ -791,7 +792,7 @@ class Dis2pVAE_cE(BaseModuleClass):
         ce_loss_mean, accuracy, f1 = self.compute_clf_metrics(logits, cat_covs)
 
         # total loss
-        loss = reconst_loss_x + \
+        loss = reconst_loss_x * recon_weight + \
                reconst_loss_x_cf * cf_weight + \
                kl_loss * kl_weight * beta + \
                ce_loss_mean * clf_weight
