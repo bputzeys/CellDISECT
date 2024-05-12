@@ -69,6 +69,7 @@ class Dis2pTrainingPlan(TrainingPlan):
     def __init__(
         self,
         module: BaseModuleClass,
+        recon_weight: Tunable[Union[float, int]],
         cf_weight: Tunable[Union[float, int]],
         beta: Tunable[Union[float, int]],
         clf_weight: Tunable[Union[float, int]],
@@ -110,7 +111,8 @@ class Dis2pTrainingPlan(TrainingPlan):
         self.adv_clf_weight = adv_clf_weight
         self.adv_period = adv_period
 
-        self.loss_kwargs.update({"cf_weight": cf_weight,
+        self.loss_kwargs.update({"recon_weight": recon_weight,
+                                 "cf_weight": cf_weight,
                                  "beta": beta,
                                  "clf_weight": clf_weight,
                                  "n_cf": n_cf,
