@@ -85,7 +85,8 @@ class Dis2pVAE_cE(BaseModuleClass):
             use_layer_norm: Tunable[Literal["encoder", "decoder", "none", "both"]] = "none",
             var_activation: Optional[Callable] = None,
             use_custom_embs: bool = False,
-            embeddings: Union[torch.Tensor, List[torch.Tensor]] = None
+            embeddings: Union[torch.Tensor, List[torch.Tensor]] = None,
+            classifier_weights: Optional[list] = None,
     ):
         super().__init__()
         self.dispersion = "gene"
@@ -95,7 +96,7 @@ class Dis2pVAE_cE(BaseModuleClass):
         self.gene_likelihood = gene_likelihood
         # Automatically deactivate if useless
         self.latent_distribution = latent_distribution
-
+        
         self.px_r = torch.nn.Parameter(torch.randn(n_input))
 
         use_batch_norm_encoder = use_batch_norm == "encoder" or use_batch_norm == "both"
@@ -129,6 +130,10 @@ class Dis2pVAE_cE(BaseModuleClass):
         self.pert_encoder = emb_dim_reducer if use_custom_embs else nn.Identity()
         
         self.zs_num = len(self.n_cat_list)
+        
+        self.classifier_weights = classifier_weights
+        if self.classifier_weights is not None:
+            assert len(self.classifier_weights) == self.zs_num, "classifier_weights should have the same length as the number of categocrical covariates."
 
         self.z_encoders_list = nn.ModuleList(
             [
@@ -689,7 +694,11 @@ class Dis2pVAE_cE(BaseModuleClass):
         f1_scores = []
         for i in range(self.zs_num):
             s_i = one_hot_cat([self.n_cat_list[i]], cats[i]).to(device)
-            ce_losses += [F.cross_entropy(logits[i], s_i)]
+            if self.classifier_weights is not None:
+                weight = torch.tensor(self.classifier_weights[i]).to(device)
+                ce_losses += [F.cross_entropy(logits[i], s_i, weight=weight)]
+            else:
+                ce_losses += [F.cross_entropy(logits[i], s_i)]
             kwargs = {"task": "multiclass", "num_classes": self.n_cat_list[i]}
             predicted_labels = torch.argmax(logits[i], dim=-1, keepdim=True).to(device)
             acc = Accuracy(**kwargs).to(device)
