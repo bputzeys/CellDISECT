@@ -7,6 +7,8 @@ import pandas as pd
 import torch
 from anndata import AnnData
 
+from sklearn.utils.class_weight import compute_class_weight
+
 from scvi import REGISTRY_KEYS
 from scvi.data import AnnDataManager
 from scvi.data.fields import (
@@ -100,6 +102,7 @@ class Dis2pVI_cE(
             train_split: Union[str, List[str]] = ["train"],
             valid_split: Union[str, List[str]] = ["valid"],
             test_split: Union[str, List[str]] = ["ood"],
+            weighted_classifier=False,
             **model_kwargs,
     ):
         super().__init__(adata)
@@ -113,7 +116,20 @@ class Dis2pVI_cE(
             if REGISTRY_KEYS.CAT_COVS_KEY in self.adata_manager.data_registry
             else None
         )
-
+        self.classifier_weights = None
+        if weighted_classifier:
+            if REGISTRY_KEYS.CAT_COVS_KEY not in self.adata_manager.data_registry:
+                raise ValueError(
+                    "Cannot use weighted classifier without categorical covariates."
+                )
+            self.classifier_weights = []
+            for covar in self.adata_manager.get_state_registry(
+                REGISTRY_KEYS.CAT_COVS_KEY
+            ).field_keys:
+                y = self.adata.obs[covar].values
+                classes = np.unique(y)
+                class_weight = compute_class_weight(class_weight="balanced", classes=classes, y=y)
+                self.classifier_weights.append(class_weight)
         self.module = self._module_cls(
             n_input=self.summary_stats.n_vars,
             n_cats_per_cov=n_cats_per_cov,
@@ -124,6 +140,7 @@ class Dis2pVI_cE(
             dropout_rate=dropout_rate,
             gene_likelihood=gene_likelihood,
             latent_distribution=latent_distribution,
+            classifier_weights=self.classifier_weights,
             **model_kwargs,
         )
         if split_key is not None:
