@@ -178,6 +178,7 @@ class Dis2pVI_cE(
             size_factor_key: Optional[str] = None,
             categorical_covariate_keys: Optional[List[str]] = None,
             continuous_covariate_keys: Optional[List[str]] = None,
+            add_cluster_covariate: bool = True,
             clustering_normalize_counts: bool = True,
             **kwargs,
     ):
@@ -192,14 +193,17 @@ class Dis2pVI_cE(
         %(param_cat_cov_keys)s
         %(param_cont_cov_keys)s
         """
+        cls.load()
         setup_method_args = cls._get_setup_method_args(**locals())
-        
-        cls.add_cluster_covariate(adata,
-                                  normalize_counts=clustering_normalize_counts)
-        if categorical_covariate_keys is None:
-            categorical_covariate_keys = ['_cluster']
-        else:
-            categorical_covariate_keys = categorical_covariate_keys + ['_cluster']
+        if add_cluster_covariate:
+            cls.add_cluster_covariate(
+                adata,
+                normalize_counts=clustering_normalize_counts
+                )
+            if categorical_covariate_keys is None:
+                categorical_covariate_keys = ['_cluster']
+            else:
+                categorical_covariate_keys = categorical_covariate_keys + ['_cluster']
 
         anndata_fields = [
             LayerField(REGISTRY_KEYS.X_KEY, layer, is_count_data=True),
@@ -245,9 +249,9 @@ class Dis2pVI_cE(
             sc.pp.log1p(adata)
         
         logger.info("Running PCA and Leiden clustering")
-        sc.tl.pca(adata)
-        sc.pp.neighbors(adata, use_rep='X_pca')
-        sc.tl.leiden(adata, key_added='_cluster')
+        sc.tl.pca(adata, random_state=0)
+        sc.pp.neighbors(adata, use_rep='X_pca', random_state=0)
+        sc.tl.leiden(adata, key_added='_cluster', flavor='igraph', n_iterations=2, random_state=0)
         
         return
         
