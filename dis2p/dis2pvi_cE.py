@@ -178,7 +178,7 @@ class Dis2pVI_cE(
             size_factor_key: Optional[str] = None,
             categorical_covariate_keys: Optional[List[str]] = None,
             continuous_covariate_keys: Optional[List[str]] = None,
-            add_cluster_covariate: bool = True,
+            add_cluster_covariate: bool = False,
             clustering_normalize_counts: bool = True,
             **kwargs,
     ):
