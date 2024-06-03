@@ -264,7 +264,6 @@ class Dis2pTrainingPlan(TrainingPlan):
         if opt2 is not None:
 
             ce_loss_mean, accuracy, f1 = self.adv_classifier_metrics(inference_outputs, True)
-            ce_loss_mean *= kappa
             opt2.zero_grad()
             self.manual_backward(ce_loss_mean)
             opt2.step()
