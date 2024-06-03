@@ -193,7 +193,6 @@ class Dis2pVI_cE(
         %(param_cat_cov_keys)s
         %(param_cont_cov_keys)s
         """
-        cls.load()
         setup_method_args = cls._get_setup_method_args(**locals())
         if add_cluster_covariate:
             cls.add_cluster_covariate(
