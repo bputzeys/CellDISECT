@@ -132,6 +132,7 @@ class Dis2pTrainingPlan(TrainingPlan):
                 Classifier(
                     n_input=self.adv_input_size,
                     n_labels=self.n_cat_list[i],
+                    logits=True,
                 ).to(device)
             )
 

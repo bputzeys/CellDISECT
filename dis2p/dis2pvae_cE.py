@@ -237,6 +237,7 @@ class Dis2pVAE_cE(BaseModuleClass):
                 Classifier(
                     n_input=n_latent_attribute,
                     n_labels=self.n_cat_list[i],
+                    logits=True,
                 ).to(device)
             )
 
