@@ -378,6 +378,7 @@ class Dis2pVI_cE(
             adv_clf_weight: Tunable[Union[float, int]] = 10,  # adversarial classifier weight
             adv_period: Tunable[int] = 1,  # adversarial training period
             n_cf: Tunable[int] = 10,  # number of X_cf recons (a random permutation of n VAEs and a random half-batch subset for each trial)
+            kapp_optimizer2: bool = False,
             **trainer_kwargs,
     ):
         """Train the model.
@@ -454,6 +455,7 @@ class Dis2pVI_cE(
                                                 adv_clf_weight=adv_clf_weight,
                                                 adv_period=adv_period,
                                                 n_cf=n_cf,
+                                                kapp_optimizer2=kapp_optimizer2,
                                                 **plan_kwargs)
 
         es = "early_stopping"

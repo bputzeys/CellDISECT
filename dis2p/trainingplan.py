@@ -90,6 +90,7 @@ class Dis2pTrainingPlan(TrainingPlan):
         lr_min: float = 0,
         scale_adversarial_loss: Union[float, Literal["auto"]] = "auto",
         new_cf_method: bool = True, # CHANGE LATER
+        kapp_optimizer2: bool = False,
         **loss_kwargs,
     ):
         super().__init__(
@@ -117,6 +118,7 @@ class Dis2pTrainingPlan(TrainingPlan):
                                  "clf_weight": clf_weight,
                                  "n_cf": n_cf,
                                  "new_cf_method": new_cf_method, # CHANGE LATER
+                                 "kapp_optimizer2": kapp_optimizer2,
                                 })
 
         self.module = module
@@ -264,6 +266,8 @@ class Dis2pTrainingPlan(TrainingPlan):
         if opt2 is not None:
 
             ce_loss_mean, accuracy, f1 = self.adv_classifier_metrics(inference_outputs, True)
+            if self.loss_kwargs["kapp_optimizer2"]:
+                ce_loss_mean *= kappa
             opt2.zero_grad()
             self.manual_backward(ce_loss_mean)
             opt2.step()
