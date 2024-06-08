@@ -124,17 +124,33 @@ class Dis2pTrainingPlan(TrainingPlan):
         self.module = module
         self.zs_num = module.zs_num
         self.n_cat_list = module.n_cat_list
-        self.adv_input_size = module.n_latent_shared + module.n_latent_attribute * (module.zs_num - 1)
+        # self.adv_input_size = module.n_latent_shared + module.n_latent_attribute * (module.zs_num - 1)
+        self.adv_input_size_shared = module.n_latent_shared
+        self.adv_input_size_attribute = module.n_latent_attribute
 
         self.adv_clf_list = nn.ModuleList([])
         for i in range(self.zs_num):
-            self.adv_clf_list.append(
-                Classifier(
-                    n_input=self.adv_input_size,
-                    n_labels=self.n_cat_list[i],
-                    logits=True,
-                ).to(device)
-            )
+            for j in range(self.zs_num):
+                if j == 0:
+                    self.adv_clf_list.append(
+                        Classifier(
+                            n_input=self.adv_input_size_shared,
+                            n_labels=self.n_cat_list[i],
+                            logits=True,
+                            use_layer_norm=True,
+                            use_batch_norm=False,
+                        ).to(device)
+                    )
+                else:
+                    self.adv_clf_list.append(
+                        Classifier(
+                            n_input=self.adv_input_size_attribute,
+                            n_labels=self.n_cat_list[i],
+                            logits=True,
+                            use_layer_norm=True,
+                            use_batch_norm=False,
+                        ).to(device)
+                    )
 
         self.scale_adversarial_loss = scale_adversarial_loss
         self.automatic_optimization = False
@@ -212,13 +228,14 @@ class Dis2pTrainingPlan(TrainingPlan):
 
         logits = []
         for i in range(self.zs_num):
-            # create Z - Zi
-            zs_sub_i = [zs[j] for j in range(self.zs_num) if j != i]
-            z_concat_sub_i = torch.cat([z_shared, *zs_sub_i], dim=-1).to(device)
-            # give to adv_clf_i
-            adv_clf_i = self.adv_clf_list[i]
-            logits_i = adv_clf_i(z_concat_sub_i)
-            logits += [logits_i]
+            for j in range(self.zs_num):
+                if j == 0:
+                    z = z_shared
+                else:
+                    z = zs[j-1]
+                adv_clf_i = self.adv_clf_list[i*self.zs_num + j]  # Each covariate has n classifiers: Z0, Zi (i != covariate)
+                logits_i = adv_clf_i(z)
+                logits += [logits_i]
 
         return self.module.compute_clf_metrics(logits, cat_covs)
 
