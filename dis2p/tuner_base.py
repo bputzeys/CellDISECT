@@ -11,6 +11,7 @@ from mudata import MuData
 from ray.tune import ResultGrid, Tuner
 from ray.tune.schedulers import TrialScheduler
 from ray.tune.search import SearchAlgorithm
+from ray import train
 
 from ray.air.integrations.wandb import WandbLoggerCallback
 
@@ -18,9 +19,8 @@ from ray.air.integrations.wandb import WandbLoggerCallback
 from scvi._types import AnnOrMuData
 from scvi.model.base import BaseModelClass
 
-import numpy as np
 import logging
-from typing import Any, Literal
+from typing import Any, Literal, Callable
 
 from lightning.pytorch import LightningDataModule
 
@@ -133,6 +133,7 @@ class AutotuneExperiment:
         use_wandb: bool = False,
         wandb_name: str = "dis2p_tune",
         plan_kwargs_keys: list[str] = [],
+        evaluation_func: Callable = None,
     ) -> None:
         self.model_cls = model_cls
         self.data = data
@@ -154,6 +155,7 @@ class AutotuneExperiment:
         self.use_wandb = use_wandb
         self.wandb_name = wandb_name
         self.plan_kwargs_keys = plan_kwargs_keys
+        self.evaluation_func = evaluation_func
 
     @property
     def id(self) -> str:
@@ -500,6 +502,7 @@ class AutotuneExperiment:
                                     sub_sample=self.sub_sample,
                                     setup_anndata_kwargs=self.setup_anndata_kwargs,
                                     plan_kwargs_keys=self.plan_kwargs_keys,
+                                    evaluation_func=self.evaluation_func,
                                     )
         trainable = with_resources(trainable, resources=self.resources)
 
@@ -536,6 +539,7 @@ def _trainable(
     sub_sample: float | None = None,
     setup_anndata_kwargs: dict[str, Any] = {},
     plan_kwargs_keys: list[str] = [],
+    evaluation_func: Callable = None,
     log_extra: bool = True,
 ) -> None:
     """Implements a Ray Tune trainable function for an :class:`~scvi.autotune.AutotuneExperiment`.
@@ -592,6 +596,10 @@ def _trainable(
         model = experiment.model_cls(adata, **model_args)
         model.train(plan_kwargs=plan_kwargs,
                     **train_args)
+        if evaluation_func is not None:
+            report_dict = evaluation_func(model, adata)
+            report_dict.update({"loss_validation": -1})
+            train.report(report_dict)
         del adata
         import gc
         gc.collect()
@@ -634,6 +642,7 @@ def run_autotune(
     use_wandb: bool = False,
     wandb_name: str = "cpa_tune",
     plan_kwargs_keys: list[str] = [],
+    evaluation_func: Callable = None,
 ) -> AutotuneExperiment:
     """``BETA`` Run a hyperparameter sweep.
 
@@ -735,6 +744,7 @@ def run_autotune(
         use_wandb=use_wandb,
         wandb_name=wandb_name,
         plan_kwargs_keys=plan_kwargs_keys,
+        evaluation_func=evaluation_func,
     )
     logger.info(f"Running autotune experiment {experiment.name}.")
     init(log_to_driver=True, ignore_reinit_error=True)
