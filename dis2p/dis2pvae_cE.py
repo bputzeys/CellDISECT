@@ -237,6 +237,7 @@ class Dis2pVAE_cE(BaseModuleClass):
                 Classifier(
                     n_input=n_latent_attribute,
                     n_labels=self.n_cat_list[i],
+                    logits=True,
                 ).to(device)
             )
 
@@ -692,19 +693,38 @@ class Dis2pVAE_cE(BaseModuleClass):
         ce_losses = []
         accuracy_scores = []
         f1_scores = []
+        if len(logits) == self.zs_num:
+            adversarial = False
+        else:
+            adversarial = True
         for i in range(self.zs_num):
             s_i = one_hot_cat([self.n_cat_list[i]], cats[i]).to(device)
-            if self.classifier_weights is not None:
-                weight = torch.tensor(self.classifier_weights[i]).to(device)
-                ce_losses += [F.cross_entropy(logits[i], s_i, weight=weight)]
-            else:
-                ce_losses += [F.cross_entropy(logits[i], s_i)]
-            kwargs = {"task": "multiclass", "num_classes": self.n_cat_list[i]}
-            predicted_labels = torch.argmax(logits[i], dim=-1, keepdim=True).to(device)
-            acc = Accuracy(**kwargs).to(device)
-            accuracy_scores.append(acc(predicted_labels, cats[i]).to(device))
-            F1 = F1Score(**kwargs).to(device)
-            f1_scores.append(F1(predicted_labels, cats[i]).to(device))
+            if adversarial:
+                for j in range(self.zs_num):
+                    logits_index = i * self.zs_num + j
+                    if self.classifier_weights is not None:
+                        weight = torch.tensor(self.classifier_weights[i]).to(device)
+                        ce_losses += [F.cross_entropy(logits[logits_index], s_i, weight=weight)]
+                    else:
+                        ce_losses += [F.cross_entropy(logits[logits_index], s_i)]
+                    kwargs = {"task": "multiclass", "num_classes": self.n_cat_list[i]}
+                    predicted_labels = torch.argmax(logits[logits_index], dim=-1, keepdim=True).to(device)
+                    acc = Accuracy(**kwargs).to(device)
+                    accuracy_scores.append(acc(predicted_labels, cats[i]).to(device))
+                    F1 = F1Score(**kwargs).to(device)
+                    f1_scores.append(F1(predicted_labels, cats[i]).to(device))   
+            else:     
+                if self.classifier_weights is not None:
+                    weight = torch.tensor(self.classifier_weights[i]).to(device)
+                    ce_losses += [F.cross_entropy(logits[i], s_i, weight=weight)]
+                else:
+                    ce_losses += [F.cross_entropy(logits[i], s_i)]
+                kwargs = {"task": "multiclass", "num_classes": self.n_cat_list[i]}
+                predicted_labels = torch.argmax(logits[i], dim=-1, keepdim=True).to(device)
+                acc = Accuracy(**kwargs).to(device)
+                accuracy_scores.append(acc(predicted_labels, cats[i]).to(device))
+                F1 = F1Score(**kwargs).to(device)
+                f1_scores.append(F1(predicted_labels, cats[i]).to(device))
 
         ce_loss_mean = sum(ce_losses) / len(ce_losses)
         accuracy = sum(accuracy_scores) / len(accuracy_scores)

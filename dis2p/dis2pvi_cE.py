@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import torch
 from anndata import AnnData
+import scanpy as sc
 
 from sklearn.utils.class_weight import compute_class_weight
 
@@ -177,6 +178,8 @@ class Dis2pVI_cE(
             size_factor_key: Optional[str] = None,
             categorical_covariate_keys: Optional[List[str]] = None,
             continuous_covariate_keys: Optional[List[str]] = None,
+            add_cluster_covariate: bool = False,
+            clustering_normalize_counts: bool = True,
             **kwargs,
     ):
         """%(summary)s.
@@ -191,6 +194,16 @@ class Dis2pVI_cE(
         %(param_cont_cov_keys)s
         """
         setup_method_args = cls._get_setup_method_args(**locals())
+        if add_cluster_covariate:
+            cls.add_cluster_covariate(
+                adata,
+                normalize_counts=clustering_normalize_counts
+                )
+            if categorical_covariate_keys is None:
+                categorical_covariate_keys = ['_cluster']
+            else:
+                categorical_covariate_keys = categorical_covariate_keys + ['_cluster']
+
         anndata_fields = [
             LayerField(REGISTRY_KEYS.X_KEY, layer, is_count_data=True),
             CategoricalObsField(REGISTRY_KEYS.BATCH_KEY, batch_key),
@@ -212,6 +225,36 @@ class Dis2pVI_cE(
         adata_manager.register_fields(adata, **kwargs)
         cls.register_manager(adata_manager)
 
+    @classmethod
+    def add_cluster_covariate(
+        cls, 
+        adata: AnnData,
+        normalize_counts: bool = True):
+        """
+        Run PCA on the gene expression matrics
+        and run leiden clustering on the PCA components
+        to create a cluster covariate to be added to the adata.obs
+        
+        normalize_counts: bool
+            If True, takes the counts from the adata.layers['counts'] and log normalizes them
+        """
+        logger.info("Adding cluster covariate to adata.obs")
+        if normalize_counts:
+            logger.info("Normalizing counts")
+            adata.X = adata.layers['counts'].copy()
+            # Normalizing to median total counts
+            sc.pp.normalize_total(adata)
+            # Logarithmize the data
+            sc.pp.log1p(adata)
+        
+        logger.info("Running PCA and Leiden clustering")
+        sc.tl.pca(adata, random_state=0)
+        sc.pp.neighbors(adata, use_rep='X_pca', random_state=0)
+        sc.tl.leiden(adata, key_added='_cluster', flavor='igraph', n_iterations=2, random_state=0)
+        
+        return
+        
+        
     # call this method after training the model with this held-out:
     # covs[cov_idx] = cov_value_cf, covs[others_idx] = adata.obs[others_idx]
     @torch.no_grad()
@@ -335,6 +378,7 @@ class Dis2pVI_cE(
             adv_clf_weight: Tunable[Union[float, int]] = 10,  # adversarial classifier weight
             adv_period: Tunable[int] = 1,  # adversarial training period
             n_cf: Tunable[int] = 10,  # number of X_cf recons (a random permutation of n VAEs and a random half-batch subset for each trial)
+            kappa_optimizer2: bool = True,
             **trainer_kwargs,
     ):
         """Train the model.
@@ -392,6 +436,7 @@ class Dis2pVI_cE(
                 test_indices=self.test_indices,
                 batch_size=batch_size,
                 use_gpu=use_gpu,
+                drop_last=True,
             )
         else:
             data_splitter = DataSplitter(
@@ -399,6 +444,7 @@ class Dis2pVI_cE(
                 train_size=train_size,
                 validation_size=validation_size,
                 batch_size=batch_size,
+                drop_last=True,                
             )
             
         training_plan = self._training_plan_cls(self.module,
@@ -409,6 +455,7 @@ class Dis2pVI_cE(
                                                 adv_clf_weight=adv_clf_weight,
                                                 adv_period=adv_period,
                                                 n_cf=n_cf,
+                                                kappa_optimizer2=kappa_optimizer2,
                                                 **plan_kwargs)
 
         es = "early_stopping"
