@@ -6,7 +6,9 @@ import numpy as np
 import pandas as pd
 import torch
 from anndata import AnnData
+import anndata as ad
 import scanpy as sc
+import random
 
 from sklearn.utils.class_weight import compute_class_weight
 
@@ -258,7 +260,7 @@ class Dis2pVI_cE(
     # call this method after training the model with this held-out:
     # covs[cov_idx] = cov_value_cf, covs[others_idx] = adata.obs[others_idx]
     @torch.no_grad()
-    def predict_given_covs(
+    def predict_given_covs_depricated(
             self,
             adata: AnnData,  # source anndata with fixed cov values
             cats: List[str],
@@ -302,6 +304,145 @@ class Dis2pVI_cE(
         px_cf_variance_pred = torch.mean(px_cf_variance, dim=0)
 
         return px_cf_mean_pred, px_cf_variance_pred
+
+    @torch.no_grad()
+    def predict_counterfactuals(
+                    self,
+                    adata: AnnData,
+                    cov_names: list[str],
+                    cov_values: list[str],
+                    cov_values_cf: list[str],
+                    cats: list[str],
+                    n_samples_from_source: Optional[int] = None,
+                    seed: Optional[int] = 0):
+        """
+        Predicts counterfactuals for a given subset of data.
+
+        This function estimates the counterfactual outcomes for a subset of data based on specified changes in covariate values.
+
+        Parameters:
+            adata (AnnData): The subset of the data for which the counterfactuals are to be predicted.
+            cov_names (list[str]): Names of the covariates that are to be changed.
+            cov_values (list[str]): Original values for the covariates that are to be changed.
+            cov_values_cf (list[str]): Counterfactual values for the covariates that are to be changed.
+            cats (list[str]): Names of the categorical covariates.
+            n_samples_from_source (Optional[int], optional): Number of samples to take from the source data 
+                to predict the counterfactuals. If None, all samples from the source data are used. Defaults to None.
+            seed (Optional[int], optional): Random seed for reproducibility. Defaults to 0. Only used if `n_samples_from_source` is not None.
+
+        Returns:
+            Tuple[torch.Tensor, torch.Tensor, torch.Tensor]: 
+                Control (source), True Counterfactuals, and Predicted Counterfactual COUNTS. (not log-transformed)
+                
+        Example:
+        - Single covariate change: (Going from ctrl to stimulated condition in CD4 T cells)
+            cats = ['cell_type', 'condition']
+            cell_type_to_check = ['CD4 T',]
+            cov_names = ['condition']
+            cov_values = ['ctrl']
+            cov_values_cf = ['stimulated']
+            n_samples_from_source = 500
+            x_ctrl, x_true, x_pred = pred_our_ood_avg(,
+                                                    adata[(adata.obs['cell_type'].isin(cell_type_to_check))].copy(),
+                                                    cov_names=cov_names,
+                                                    cov_values=cov_values,
+                                                    cov_values_cf=cov_values_cf,
+                                                    cats=cats,
+                                                    n_samples_from_source=n_samples_from_source,
+                                                    )
+        
+        - Multiple covariate change: (Going from female breast to male prostate gland in Epithelial cell (luminal) cells)
+            cats = ['tissue', 'Sample ID', 'sex', 'Age_bin', 'CoarseCellType']
+            cell_type_to_check = 'Epithelial cell (luminal)'
+
+            cov_names = ['sex', 'tissue']
+            cov_values = ['female', 'breast']
+            cov_values_cf = ['male', 'prostate gland']
+            n_samples_from_source = None
+            x_ctrl, x_true, x_pred = model.predict_counterfactuals(,
+                                                    adata[adata.obs['Broad cell type'] == cell_type_to_check].copy(), # We want to do 
+                                                                        # counterfactuals in the mentioned covariates, in this cell type
+                                                    cov_names=cov_names,
+                                                    cov_values=cov_values,
+                                                    cov_values_cf=cov_values_cf,
+                                                    cats=cats,
+                                                    n_samples_from_source=n_samples_from_source,
+                                                    )
+        """
+        adata.X = adata.layers['counts'].copy()
+        adata.obs['idx'] = [i for i in range(len(adata))]
+
+        true_indices = pd.DataFrame([adata.obs[cov_name] == cov_values_cf[i] for i, cov_name in enumerate(cov_names)]).all(0).values
+        true_idx = list(adata[true_indices].obs['idx'])
+        
+        source_indices = pd.DataFrame([adata.obs[cov_name] == cov_values[i] for i, cov_name in enumerate(cov_names)]).all(0).values
+        source_idx = list(adata[source_indices].obs['idx'])
+
+        true_adata = adata[adata.obs['idx'].isin(true_idx)].copy()
+        source_adata = adata[adata.obs['idx'].isin(source_idx)].copy()
+
+        if n_samples_from_source is not None:
+            random.seed(seed)
+            chosen_ids = random.sample(range(len(source_adata)), n_samples_from_source)
+            source_adata = source_adata[chosen_ids].copy()
+        adata_cf = source_adata.copy()
+            
+        
+        for i, cov_name in enumerate(cov_names):
+            adata_cf.obs.loc[:, cov_name] = pd.Categorical(
+                [cov_values_cf[i] for _ in adata_cf.obs[cov_name]])
+        batch_size = len(adata_cf)
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+        self.setup_anndata(
+            adata_cf,
+            layer='counts',
+            categorical_covariate_keys=cats,
+            continuous_covariate_keys=[]
+        )
+        adata_cf = self._validate_anndata(adata_cf)
+        source_adata = self._validate_anndata(source_adata)
+        # print("Data loader OOD")
+        scdl_cf = self._make_data_loader(
+            adata=adata_cf, batch_size=batch_size
+        )
+        scdl = self._make_data_loader(
+            adata=source_adata, batch_size=batch_size
+        )
+        # cov_idx = cats.index(cov_name)
+        px_cf_mean_list = []
+        for tensors, tensors_cf in zip(scdl, scdl_cf):
+            _, pxs_cf = self.module.sub_forward_cf_avg(
+                                x=tensors[REGISTRY_KEYS.X_KEY].to(device),
+                                cat_covs=tensors[REGISTRY_KEYS.CAT_COVS_KEY].to(device),
+                                cat_covs_cf=tensors_cf[REGISTRY_KEYS.CAT_COVS_KEY].to(device))
+
+            for px_cf in pxs_cf:
+                if px_cf is None:
+                    continue
+                x_cf = px_cf.mu
+                px_cf_mean_list.append(x_cf)
+
+        px_cf_mean_tensor = torch.stack(px_cf_mean_list, dim=0)
+        
+        px_cf_mean_pred = torch.mean(px_cf_mean_tensor, dim=0) # (n_cells, n_genes)
+
+        px_cf_mean_pred = px_cf_mean_pred.to('cpu').detach().numpy()
+        
+        px_cf_mean_tensor = px_cf_mean_tensor.to('cpu').detach().numpy()
+
+        px_cf_mean_tensor = ad.AnnData(px_cf_mean_pred)
+        px_cf_mean_tensor = torch.tensor(px_cf_mean_tensor.X)
+
+        true_x_count = torch.tensor(true_adata.X)
+        cf_x_count = torch.tensor(source_adata.X)
+
+        x_true = true_x_count
+        x_pred = px_cf_mean_tensor
+        x_ctrl = cf_x_count
+
+        return x_ctrl, x_true, x_pred
+
 
     @torch.no_grad()
     def get_latent_representation(
