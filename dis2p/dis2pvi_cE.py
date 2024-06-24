@@ -577,7 +577,7 @@ class Dis2pVI_cE(
                 test_indices=self.test_indices,
                 batch_size=batch_size,
                 use_gpu=use_gpu,
-                drop_last=True,
+                drop_last=3,
             )
         else:
             data_splitter = DataSplitter(
@@ -585,7 +585,6 @@ class Dis2pVI_cE(
                 train_size=train_size,
                 validation_size=validation_size,
                 batch_size=batch_size,
-                drop_last=True,                
             )
             
         training_plan = self._training_plan_cls(self.module,
