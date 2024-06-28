@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "dis2p"
-version = "0.0.9"
+version = "0.0.10"
 description = "To be added."
 authors = ["First Last <name@example.com>"]
 license = "MIT"

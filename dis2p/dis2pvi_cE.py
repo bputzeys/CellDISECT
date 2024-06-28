@@ -520,6 +520,7 @@ class Dis2pVI_cE(
             adv_period: Tunable[int] = 1,  # adversarial training period
             n_cf: Tunable[int] = 10,  # number of X_cf recons (a random permutation of n VAEs and a random half-batch subset for each trial)
             kappa_optimizer2: bool = True,
+            n_epochs_pretrain_ae: int = 0,
             **trainer_kwargs,
     ):
         """Train the model.
@@ -596,6 +597,7 @@ class Dis2pVI_cE(
                                                 adv_period=adv_period,
                                                 n_cf=n_cf,
                                                 kappa_optimizer2=kappa_optimizer2,
+                                                n_epochs_pretrain_ae=n_epochs_pretrain_ae,
                                                 **plan_kwargs)
 
         es = "early_stopping"
