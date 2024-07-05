@@ -82,6 +82,7 @@ class Dis2pTrainingPlan(TrainingPlan):
         weight_decay: Tunable[float] = 1e-6,
         n_steps_kl_warmup: Tunable[int] = None,
         n_epochs_kl_warmup: Tunable[int] = 400,
+        n_epochs_pretrain_ae: Tunable[int] = 0,
         reduce_lr_on_plateau: Tunable[bool] = True,
         lr_factor: Tunable[float] = 0.6,
         lr_patience: Tunable[int] = 30,
@@ -112,6 +113,7 @@ class Dis2pTrainingPlan(TrainingPlan):
         self.adv_clf_weight = adv_clf_weight
         self.adv_period = adv_period
         self.kappa_optimizer2 = kappa_optimizer2
+        self.n_epochs_pretrain_ae = n_epochs_pretrain_ae
 
         self.loss_kwargs.update({"recon_weight": recon_weight,
                                  "cf_weight": cf_weight,
@@ -267,6 +269,22 @@ class Dis2pTrainingPlan(TrainingPlan):
         # Log kappa
         self.log("kl_weight", kappa, on_step=False, on_epoch=True)
         # train normally
+        if self.n_epochs_pretrain_ae > 0 and self.current_epoch < self.n_epochs_pretrain_ae:
+            opt1.zero_grad()
+            loss = losses[LOSS_KEYS.RECONST_LOSS_X]
+            loss = sum(loss.values()) / len(loss)
+            
+            self.manual_backward(loss)
+            opt1.step()
+
+            ce_loss_mean, accuracy, f1 = self.adv_classifier_metrics(inference_outputs, True)
+
+            losses.update({'adv_ce': ce_loss_mean, 'adv_acc': accuracy, 'adv_f1': f1})
+
+            self.compute_and_log_metrics(losses, self.train_metrics, "train")
+
+            return losses
+        
         if (self.current_epoch % self.adv_period == 0):
 
             loss = losses[LOSS_KEYS.LOSS]
