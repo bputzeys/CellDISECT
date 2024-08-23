@@ -761,11 +761,20 @@ class Dis2pVAE_cE(BaseModuleClass):
         reconst_loss_x_cf_list = []
 
         for _ in range(n_cf):
+            idx_shuffled = list(range(batch_size))
 
             # choose a random permutation of X as X_cf
-
-            idx_shuffled = list(range(batch_size))
-            random.shuffle(idx_shuffled)
+            if 'cluster' in tensors.keys():
+                # if the data is clustered, we shuffle the data within each cluster, meaning each index will be replaced by another index within the same cluster
+                cluster = tensors['cluster']
+                cluster_unique = torch.unique(cluster)
+                for c in cluster_unique:
+                    idx_c = torch.where(cluster == c)[0]
+                    idx_c_shuffled = idx_c[torch.randperm(idx_c.size(0))]
+                    for i, idx in enumerate(idx_c):
+                        idx_shuffled[idx] = idx_c_shuffled[i]
+            else:
+                random.shuffle(idx_shuffled)
             idx_shuffled = torch.tensor(idx_shuffled).to(device)
 
             x_ = x
