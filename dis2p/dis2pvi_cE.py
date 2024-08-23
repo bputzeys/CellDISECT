@@ -201,10 +201,10 @@ class Dis2pVI_cE(
                 adata,
                 normalize_counts=clustering_normalize_counts
                 )
-            if categorical_covariate_keys is None:
-                categorical_covariate_keys = ['_cluster']
-            else:
-                categorical_covariate_keys = categorical_covariate_keys + ['_cluster']
+            # if categorical_covariate_keys is None:
+            #     categorical_covariate_keys = ['_cluster']
+            # else:
+            #     categorical_covariate_keys = categorical_covariate_keys + ['_cluster']
 
         anndata_fields = [
             LayerField(REGISTRY_KEYS.X_KEY, layer, is_count_data=True),
@@ -220,6 +220,10 @@ class Dis2pVI_cE(
                 REGISTRY_KEYS.CONT_COVS_KEY, continuous_covariate_keys
             ),
         ]
+        if add_cluster_covariate:
+            anndata_fields.append(
+                CategoricalObsField('cluster', '_cluster')
+                )
 
         adata_manager = AnnDataManager(
             fields=anndata_fields, setup_method_args=setup_method_args
@@ -241,6 +245,11 @@ class Dis2pVI_cE(
             If True, takes the counts from the adata.layers['counts'] and log normalizes them
         """
         logger.info("Adding cluster covariate to adata.obs")
+        if '_cluster' in adata.obs.keys():
+            logger.warning(
+                "Cluster covariate already present in adata.obs, remove in case you want to re-run, skipping!")
+            return
+
         if normalize_counts:
             logger.info("Normalizing counts")
             adata.X = adata.layers['counts'].copy()
