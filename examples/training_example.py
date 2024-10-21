@@ -112,7 +112,7 @@ dvi.Dis2pVI_cE.setup_anndata(
 # Use this to make random splits
 model = dvi.Dis2pVI_cE(adata,
                        **arch_dict)
-# Use this if you have pre-defined splits
+## Use this if you have pre-defined splits
 # model = dvi.Dis2pVI_cE(adata,
 #                        split_key=split_key,
 #                        train_split=['train'],
