@@ -1,4 +1,4 @@
-# Disentangling covariates to predict counterfacctuals (dis2p)
+# single-cell DISentangled Experts for Covariate Counterfactuals (scDISECC)
 Causal generative model designed to disentangle known covariate variations from unknown ones at test time while simultaneously learning to make counterfactual predictions.
 
 
