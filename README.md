@@ -9,7 +9,7 @@ Prerequisites
 --
 Conda Environment
 --
-We recommend using [Anaconda](https://www.anaconda.com/)/[Miniconda](https://docs.conda.io/projects/miniconda/en/latest/) to create a conda environment for using Dis2P. You can create a python environment using the following command:
+We recommend using [Anaconda](https://www.anaconda.com/)/[Miniconda](https://docs.conda.io/projects/miniconda/en/latest/) to create a conda environment for using scDISECC. You can create a python environment using the following command:
 
     conda create -n dis2p python=3.9
 
