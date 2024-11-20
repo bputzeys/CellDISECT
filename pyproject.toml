@@ -1,12 +1,12 @@
 [tool.poetry]
-name = "dis2p"
+name = "celldisect"
 version = "0.0.11"
 description = "To be added."
 authors = ["First Last <name@example.com>"]
 license = "MIT"
 readme = "README.md"
 packages = [
-    {include = "dis2p"},
+    {include = "celldisect"},
 ]
 
 [tool.poetry.dependencies]

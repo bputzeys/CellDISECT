@@ -1,4 +1,4 @@
-# single-cell DISentangled Experts for Covariate Counterfactuals (scDISECC)
+# single-cell DISentangled Experts for Covariate counTerfactuals (CellDISECT)
 Causal generative model designed to disentangle known covariate variations from unknown ones at test time while simultaneously learning to make counterfactual predictions.
 
 
@@ -9,16 +9,16 @@ Prerequisites
 --
 Conda Environment
 --
-We recommend using [Anaconda](https://www.anaconda.com/)/[Miniconda](https://docs.conda.io/projects/miniconda/en/latest/) to create a conda environment for using scDISECC. You can create a python environment using the following command:
+We recommend using [Anaconda](https://www.anaconda.com/)/[Miniconda](https://docs.conda.io/projects/miniconda/en/latest/) to create a conda environment for using CellDISECT. You can create a python environment using the following command:
 
-    conda create -n dis2p python=3.9
+    conda create -n CellDISECT python=3.9
 
 Then, you can activate the environment using:
 
-    conda activate dis2p
+    conda activate CellDISECT
 
 
-- Install pytorch (This version of dis2p is tested with pytorch 2.1.2 and cuda 12, install the appropriate version of pytorch for your system.)
+- Install pytorch (This version of CellDISECT is tested with pytorch 2.1.2 and cuda 12, install the appropriate version of pytorch for your system.)
 ```
 conda install pytorch==2.1.2 torchvision==0.16.2 torchaudio==2.1.2 pytorch-cuda=12.1 -c pytorch -c nvidia
 ```
@@ -35,9 +35,9 @@ pip install \
 pip install rapids-singlecell
 ```
 
-- Install the latest version of dis2p
+- Install the latest version of CellDISECT
 ```
-pip install git+https://github.com/Lotfollahi-lab/dis2p
+pip install git+https://github.com/Lotfollahi-lab/CellDISECT
 ```
 
 - (Optional) to install cuda enabled jax:

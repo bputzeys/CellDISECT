@@ -1,5 +1,4 @@
 import logging
-from re import L
 from typing import List, Literal, Optional, Sequence, Tuple, Union
 
 import numpy as np
@@ -30,16 +29,16 @@ from scvi.model.base import RNASeqMixin, VAEMixin, BaseModelClass
 from scvi.autotune._types import Tunable, TunableMixin
 logger = logging.getLogger(__name__)
 
-from .dis2pvae_cE import Dis2pVAE_cE
+from ._module import CellDISECTModule
 from .data import AnnDataSplitter
-from .trainingplan import Dis2pTrainingPlan
+from .trainingplan import CellDISECTTrainingPlan
 
 from scvi.train._callbacks import SaveBestState
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 
-class Dis2pVI_cE(
+class CellDISECT(
     RNASeqMixin,
     VAEMixin,
     UnsupervisedTrainingMixin,
@@ -79,16 +78,16 @@ class Dis2pVI_cE(
     Examples
     --------
     >>> adata = anndata.read_h5ad(path_to_anndata)
-    >>> Dis2pVI_cE.setup_anndata(adata, batch_key="batch")
-    >>> vae = Dis2pVI_cE(adata)
+    >>> CellDISECT.setup_anndata(adata, batch_key="batch")
+    >>> vae = CellDISECT(adata)
     >>> vae.train()
     >>> adata.obsm["X_scVI"] = vae.get_latent_representation()
     >>> adata.obsm["X_normalized_scVI"] = vae.get_normalized_expression()
     """
 
-    _module_cls = Dis2pVAE_cE
+    _module_cls = CellDISECTModule
     _data_splitter_cls = AnnDataSplitter
-    _training_plan_cls = Dis2pTrainingPlan
+    _training_plan_cls = CellDISECTTrainingPlan
     _train_runner_cls = TrainRunner
 
     def __init__(
@@ -156,7 +155,7 @@ class Dis2pVI_cE(
             self.test_indices = test_indices
             
         self._model_summary_string = (
-            "Dis2pVI_cE Model with the following params: \nn_hidden: {}, n_latent_shared: {}, n_latent_attribute: {}"
+            "CellDISECT Model with the following params: \nn_hidden: {}, n_latent_shared: {}, n_latent_attribute: {}"
             ", n_layers: {}, dropout_rate: {}, gene_likelihood: {}, latent_distribution: {}"
         ).format(
             n_hidden,
@@ -284,7 +283,7 @@ class Dis2pVI_cE(
         cov_name = cats[cov_idx]
         adata_cf.obs[cov_name] = pd.Categorical([cov_value_cf for _ in adata_cf.obs[cov_name]])
 
-        Dis2pVI_cE.setup_anndata(
+        CellDISECT.setup_anndata(
             adata_cf,
             layer='counts',
             categorical_covariate_keys=cats,

@@ -1,8 +1,8 @@
 import setuptools
 
 setuptools.setup(
-    name='dis2p',
+    name='celldisect',
     version='0.0.1',
-    url='https://github.com/M0hammadL/scfair',
-    packages=['dis2p']
+    url='https://github.com/Lotfollahi-lab/celldisect',
+    packages=['celldisect']
 )

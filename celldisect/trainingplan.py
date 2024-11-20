@@ -18,7 +18,7 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 from scvi.autotune._types import Tunable
 
 
-class Dis2pTrainingPlan(TrainingPlan):
+class CellDISECTTrainingPlan(TrainingPlan):
     """Train vaes with adversarial loss option to encourage latent space mixing.
 
     Parameters

@@ -10,7 +10,7 @@ torch.set_float32_matmul_precision('medium')
 import warnings
 warnings.simplefilter("ignore", UserWarning)
 
-from dis2p import dis2pvi_cE as dvi
+from celldisect import CellDISECT
 
 scvi.settings.seed = 42
 
@@ -90,7 +90,7 @@ if cell_type_included:
 else:
     model_name = model_name + f'cellTypeNotIncluded'
 
-wandb_logger = WandbLogger(project=f"Dis2PVI_cE_{module_name}", name=model_name) # If you have a wandb account logged in. Very recommended for training monitoring, feel free to comment
+wandb_logger = WandbLogger(project=f"CellDISECT_{module_name}", name=model_name) # If you have a wandb account logged in. Very recommended for training monitoring, feel free to comment
 train_dict['logger'] = wandb_logger # If you have a wandb account logged in. Very recommended for training monitoring, feel free to comment
 wandb_logger.experiment.config.update({'train_dict': train_dict, 'arch_dict': arch_dict, 'plan_kwargs': plan_kwargs}) # If you have a wandb account logged in. Very recommended for training monitoring, feel free to comment
 
@@ -101,7 +101,7 @@ except OSError as e:
     print(f"Error deleting directory: {e}") 
 
 
-dvi.Dis2pVI_cE.setup_anndata(
+CellDISECT.setup_anndata(
     adata,
     layer='counts',
     categorical_covariate_keys=cats,
@@ -110,15 +110,15 @@ dvi.Dis2pVI_cE.setup_anndata(
 )
 
 # Use this to make random splits
-model = dvi.Dis2pVI_cE(adata,
-                       **arch_dict)
+model = CellDISECT(adata,
+                   **arch_dict)
 ## Use this if you have pre-defined splits
-# model = dvi.Dis2pVI_cE(adata,
-#                        split_key=split_key,
-#                        train_split=['train'],
-#                        valid_split=['val'],
-#                        test_split=['test'],
-#                        **arch_dict)
+# model = CellDISECT(adata,
+#                     split_key=split_key,
+#                     train_split=['train'],
+#                     valid_split=['val'],
+#                     test_split=['test'],
+#                     **arch_dict)
 
 model.train(**train_dict, plan_kwargs=plan_kwargs, )
 model.save(f"{pre_path}/{model_name}", overwrite=True)
