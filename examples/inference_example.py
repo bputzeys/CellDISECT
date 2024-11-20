@@ -12,8 +12,7 @@ import warnings
 warnings.simplefilter("ignore", UserWarning)
 import scanpy as sc
 
-from dis2p import dis2pvi_cE as dvi
-
+from celldisect import CellDISECT
 
 adata = sc.read_h5ad("PATH/TO/DATA.h5ad")  # Write the path to your h5ad file
 adata = adata[adata.X.sum(1) != 0].copy()
@@ -40,12 +39,12 @@ model_name = "MODEL_NAME"
 ## Example:
 # model_name = 'pretrainAE_0_maxEpochs_1000_reconW_20_cfWeight_0.8_beta_0.003_clf_0.05_adv_0.014_advp_5_n_cf_1_lr_0.003_wd_5e-05_new_cf_True_dropout_0.1_n_hidden_128_n_latent_32_n_layers_2_batch_size_256_cellTypeNotIncluded'
 
-model = dvi.Dis2pVI_cE.load(f"{pre_path}/{model_name}", adata=adata)
+model = CellDISECT.load(f"{pre_path}/{model_name}", adata=adata)
 
 # Get the latent representations
 print(f"Getting the latent 0...")
 # Z_0
-adata.obsm[f"dis2p_cE_Z_0"] = model.get_latent_representation(
+adata.obsm[f"CellDISECT_Z_0"] = model.get_latent_representation(
     nullify_cat_covs_indices=[s for s in range(len(cats))], nullify_shared=False
 )
 
@@ -54,11 +53,11 @@ for i in range(len(cats)):
     null_idx = [s for s in range(len(cats)) if s != i]
     label = cats[i]
     # Z_i
-    adata.obsm[f"dis2p_cE_Z_{label}"] = model.get_latent_representation(
+    adata.obsm[f"CellDISECT_Z_{label}"] = model.get_latent_representation(
         nullify_cat_covs_indices=null_idx, nullify_shared=True
     )
     # Z_{-i}
-    adata.obsm[f"dis2p_cE_Z_not_{label}"] = model.get_latent_representation(
+    adata.obsm[f"CellDISECT_Z_not_{label}"] = model.get_latent_representation(
         nullify_cat_covs_indices=[i], nullify_shared=False
     )
 
@@ -69,18 +68,18 @@ for i in range(len(cats)):
 # When mixing two latents, it will look like [latent_0, 0, latent_i, 0, ..., 0].
 for i in range(len(cats)):  # loop over all Z_i
     label = cats[i]
-    latent_name = f"dis2p_cE_Z_0+{label}"
+    latent_name = f"CellDISECT_Z_0+{label}"
     adata.obsm[latent_name] = (
-        adata.obsm["dis2p_cE_Z_0"].copy() + adata.obsm[f"dis2p_cE_Z_{label}"].copy()
+        adata.obsm["CellDISECT_Z_0"].copy() + adata.obsm[f"CellDISECT_Z_{label}"].copy()
     )
 
 # Compute neighbors and UMAPs for the latent representations (this might take a while, consider running it using RAPIDS scanpy with a GPU if data is large)
 for i in range(len(cats) + 1):  # loop over all Z_i | Neighbors and UMAPs for Z_i
     if i == 0:
-        latent_name = f"dis2p_cE_Z_{i}"
+        latent_name = f"CellDISECT_Z_{i}"
     else:
         label = cats[i - 1]
-        latent_name = f"dis2p_cE_Z_{label}"
+        latent_name = f"CellDISECT_Z_{label}"
 
     latent = ad.AnnData(X=adata.obsm[f"{latent_name}"], obs=adata.obs)
     sc.pp.neighbors(adata=latent, use_rep="X")
@@ -94,7 +93,7 @@ for i in range(
     len(cats)
 ):  # loop over all Z_i | Neighbors and UMAPs for Z_0+Z_i | Optional
     label = cats[i]
-    latent_name = f"dis2p_cE_Z_0+{label}"
+    latent_name = f"CellDISECT_Z_0+{label}"
 
     latent = ad.AnnData(X=adata.obsm[f"{latent_name}"], obs=adata.obs)
     sc.pp.neighbors(adata=latent, use_rep="X")
@@ -114,10 +113,10 @@ adata.write(f"/PATH/TO/SAVE/LATENTS.h5ad")
 
 # for i in range(len(cats) + 1):  # loop over all Z_i
 #     if i == 0:
-#         latent_name = f'dis2p_cE_Z_{i}'
+#         latent_name = f'CellDISECT_Z_{i}'
 #     else:
 #         label = cats[i-1]
-#         latent_name = f'dis2p_cE_Z_{label}'
+#         latent_name = f'CellDISECT_Z_{label}'
 
 
 #     print(f"---UMAP for {latent_name}---")
@@ -138,7 +137,7 @@ adata.write(f"/PATH/TO/SAVE/LATENTS.h5ad")
 
 # for i in range(len(cats)):  # loop over all Z_i
 #     label = cats[i]
-#     latent_name = f'dis2p_cE_Z_0+{label}'
+#     latent_name = f'CellDISECT_Z_0+{label}'
 
 #     print(f"---UMAP for {latent_name}---")
 #     sc.set_figure_params(figsize=(12, 8))

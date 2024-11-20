@@ -21,7 +21,7 @@ dim_indices = 0
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 
-class Dis2pVAE_cE(BaseModuleClass):
+class CellDISECTModule(BaseModuleClass):
     """
     Variational auto-encoder module.
 
