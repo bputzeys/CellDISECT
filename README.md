@@ -1,4 +1,4 @@
-# single-cell DISentangled Experts for Covariate counTerfactuals (CellDISECT)
+# Cell DISentangled Experts for Covariate counTerfactuals (CellDISECT)
 Causal generative model designed to disentangle known covariate variations from unknown ones at test time while simultaneously learning to make counterfactual predictions.
 
 
