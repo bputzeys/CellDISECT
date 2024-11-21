@@ -241,7 +241,10 @@ class CellDISECTModule(BaseModuleClass):
                 ).to(device)
             )
 
-    def _get_inference_input(self, tensors):
+    def _get_inference_input(
+            self,
+            tensors: dict[str, torch.Tensor]
+    ):
 
         cat_key = REGISTRY_KEYS.CAT_COVS_KEY
         cat_covs = tensors[cat_key]
@@ -254,7 +257,11 @@ class CellDISECTModule(BaseModuleClass):
         }
         return input_dict
 
-    def _get_generative_input(self, tensors, inference_outputs):
+    def _get_generative_input(
+            self,
+            tensors: dict[str, torch.Tensor],
+            inference_outputs: dict[str, torch.Tensor],
+    ):
         input_dict = {
             "z_shared": inference_outputs["z_shared"],
             "zs": inference_outputs["zs"],  # a list of all zs
@@ -264,7 +271,8 @@ class CellDISECTModule(BaseModuleClass):
         return input_dict
 
     @auto_move_data
-    def inference(self, x,
+    def inference(self,
+                  x,
                   cat_covs,
                   nullify_cat_covs_indices: Optional[List[int]] = None,
                   nullify_shared: Optional[bool] = False,
@@ -276,22 +284,31 @@ class CellDISECTModule(BaseModuleClass):
         library = torch.log(x.sum(1)).unsqueeze(1)
         if self.log_variational:
             x_ = torch.log(1 + x_)
-        
+
+        # cat_covs are shaped like (batch_size, n_cat_covs)
+        # we split them into a list of n_cat_covs (batch_size, 1) tensors
+        # where each tensor is a column of cat_covs (each will contain one categorical covariate)
         cat_in = torch.split(cat_covs, 1, dim=1)
         # z_shared
         emb = []
         for i, embedding in enumerate(cat_covs.t()):
+            # emb will be a list of embeddings for each categorical covariate
+            # for the batch. Each embedding is of shape (batch_size, emb_dim)
             emb.append(self.covars_embeddings[str(i)](embedding.long()))
-        prior_emb_in = emb[:]
-        emb = torch.stack(emb, dim=0)
-        emb = torch.permute(emb, (1, 0, 2))
+
+        prior_emb_in = emb[:] # save a copy for later
+        emb = torch.stack(emb, dim=0) # unique_covs x batch_size x emb_dim
+        emb = torch.permute(emb, (1, 0, 2)) # batch_size x unique_covs x emb_dim
         emb = self.pert_encoder(emb)
-        emb = emb.reshape(emb.shape[0], -1)
+        emb = emb.reshape(emb.shape[0], -1) # batch_size x (unique_covs * emb_dim)
+        # each row in emb now represents the embedding for all covariates in that single cell
+
+        # the expression data and the embeddings are concatenated
+        # and passed through the first encoder to get the shared latent space Z_0
         qz_shared, z_shared = self.z_encoders_list[0](torch.hstack((x_, emb)))
         z_shared = z_shared.to(device)
     
         # zs
-        
         encoders_outputs = []
         encoders_inputs = [torch.hstack((x_, emb)) for _ in cat_in]
 
@@ -335,11 +352,13 @@ class CellDISECTModule(BaseModuleClass):
         return output_dict
 
     @auto_move_data
-    def generative(self, z_shared,
-                   zs,
-                   library,
-                   cat_covs,
-                   ):
+    def generative(
+            self,
+            z_shared,
+            zs,
+            library,
+            cat_covs,
+            ):
 
         output_dict = {"px": []}
 
@@ -349,27 +368,34 @@ class CellDISECTModule(BaseModuleClass):
         emb = []
         for i, embedding in enumerate(cat_covs.t()):
             emb.append(self.covars_embeddings[str(i)](embedding.long()))
-        emb = torch.stack(emb, dim=0)
+        emb = torch.stack(emb, dim=0) # unique_covs x batch_size x emb_dim
         full_embs_ubd = emb.clone() # unique_covs x batch_size x emb_dim
-        emb = torch.permute(emb, (1, 0, 2))
+        emb = torch.permute(emb, (1, 0, 2)) # batch_size x unique_covs x emb_dim
         emb = self.pert_encoder(emb)
-        emb = emb.reshape(emb.shape[0], -1)
+        emb = emb.reshape(emb.shape[0], -1) # batch_size x (unique_covs * emb_dim)
+        # each row in emb now represents the embedding for all covariates in that single cell
+
+        # Create embeddings for all covariates except the ith one for the decoder
         all_cats_but_one = []
-        for i in range(self.zs_num):
-            cov_indices = list(set(list(range(self.zs_num)))-set([i]))
-            ith_emb = full_embs_ubd[cov_indices, :, :]
-            ith_emb = torch.permute(ith_emb, (1, 0, 2))
-            ith_emb = ith_emb.reshape(ith_emb.shape[0], -1)
+        for i in range(self.zs_num): # for each categorical covariate
+            cov_indices = list(set(range(self.zs_num)) - {i}) # all indices except i
+            # embeddings for all covariates except the ith one
+            ith_emb = full_embs_ubd[cov_indices, :, :] # (unique_covs-1) x batch_size x emb_dim
+            ith_emb = torch.permute(ith_emb, (1, 0, 2)) # batch_size x (unique_covs-1) x emb_dim
+            ith_emb = ith_emb.reshape(ith_emb.shape[0], -1) # batch_size x ((unique_covs-1) * emb_dim)
             all_cats_but_one.append(ith_emb)
-        
+
+        # Covariate embeddings for decoders
+        # Dec_0 takes all covariates
+        # Dec_i takes all covariates except the ith one
         dec_cats_in = [emb] + all_cats_but_one
 
         for dec_count in range(self.zs_num + 1):
-
+            # Decoder_i
             x_decoder = self.x_decoders_list[dec_count]
-
+            # Decoder_i covariates
             dec_covs = dec_cats_in[dec_count]
-
+            # Decoder_i latent input
             x_decoder_input = z[dec_count]
             
             px_scale, px_r, px_rate, px_dropout = x_decoder(
