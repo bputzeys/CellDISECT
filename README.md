@@ -12,6 +12,8 @@
 CellDISECT is a causal generative model designed to disentangle known covariate variations from unknown ones at test time while simultaneously learning to make counterfactual predictions. CellDISECT finds multiple latent representations for each cell, one unsupervised, and the rest weakly supervised by the provided covariates. Its latent space captures not only covariate-specific information but also new biology, thereby offering users a multifaceted view of the data and enhancing the ability for cell type discovery. Moreover, by using different "expert" models to learn each latent it achieves flexible fairness in single-cell analysis. This flexibility allows choosing which covariates to use as biological and which as batch, at test time, as opposed to at train time like with most methods.
 
 
+
+
 Installation
 ============
 
