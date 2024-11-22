@@ -17,50 +17,68 @@ from scvi.train._metrics import ElboMetric
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 from scvi.autotune._types import Tunable
 
-
 class CellDISECTTrainingPlan(TrainingPlan):
-    """Train vaes with adversarial loss option to encourage latent space mixing.
+    """
+    Train VAEs with adversarial loss option to encourage latent space mixing.
 
     Parameters
     ----------
-    module
+    module : BaseModuleClass
         A module instance from class ``BaseModuleClass``.
-    optimizer
+    recon_weight : Tunable[Union[float, int]]
+        Weight for the reconstruction loss of X.
+    cf_weight : Tunable[Union[float, int]]
+        Weight for the reconstruction loss of X_cf.
+    beta : Tunable[Union[float, int]]
+        Weight for the KL divergence of Zi.
+    clf_weight : Tunable[Union[float, int]]
+        Weight for the Si classifier loss.
+    adv_clf_weight : Tunable[Union[float, int]]
+        Weight for the adversarial classifier loss.
+    adv_period : Tunable[int]
+        Adversarial training period.
+    n_cf : Tunable[int]
+        Number of X_cf reconstructions (a random permutation of n VAEs and a random half-batch subset for each trial).
+    optimizer : Tunable[Literal["Adam", "AdamW", "Custom"]], optional
         One of "Adam" (:class:`~torch.optim.Adam`), "AdamW" (:class:`~torch.optim.AdamW`),
         or "Custom", which requires a custom optimizer creator callable to be passed via
-        `optimizer_creator`.
-    optimizer_creator
+        `optimizer_creator`. Default is "Adam".
+    optimizer_creator : Optional[TorchOptimizerCreator], optional
         A callable taking in parameters and returning a :class:`~torch.optim.Optimizer`.
-        This allows using any PyTorch optimizer with custom hyperparameters.
-    lr
-        Learning rate used for optimization, when `optimizer_creator` is None.
-    weight_decay
-        Weight decay used in optimization, when `optimizer_creator` is None.
-    eps
-        eps used for optimization, when `optimizer_creator` is None.
-    n_steps_kl_warmup
+        This allows using any PyTorch optimizer with custom hyperparameters. Default is None.
+    lr : Tunable[float], optional
+        Learning rate used for optimization, when `optimizer_creator` is None. Default is 1e-3.
+    weight_decay : Tunable[float], optional
+        Weight decay used in optimization, when `optimizer_creator` is None. Default is 1e-6.
+    n_steps_kl_warmup : Tunable[int], optional
         Number of training steps (minibatches) to scale weight on KL divergences from 0 to 1.
-        Only activated when `n_epochs_kl_warmup` is set to None.
-    n_epochs_kl_warmup
+        Only activated when `n_epochs_kl_warmup` is set to None. Default is None.
+    n_epochs_kl_warmup : Tunable[int], optional
         Number of epochs to scale weight on KL divergences from 0 to 1.
-        Overrides `n_steps_kl_warmup` when both are not `None`.
-    reduce_lr_on_plateau
+        Overrides `n_steps_kl_warmup` when both are not `None`. Default is 400.
+    n_epochs_pretrain_ae : Tunable[int], optional
+        Number of epochs to pretrain the autoencoder. Default is 0.
+    reduce_lr_on_plateau : Tunable[bool], optional
         Whether to monitor validation loss and reduce learning rate when validation set
-        `lr_scheduler_metric` plateaus.
-    lr_factor
-        Factor to reduce learning rate.
-    lr_patience
-        Number of epochs with no improvement after which learning rate will be reduced.
-    lr_threshold
-        Threshold for measuring the new optimum.
-    lr_scheduler_metric
-        Which metric to track for learning rate reduction.
-    lr_min
-        Minimum learning rate allowed
-    scale_adversarial_loss
+        `lr_scheduler_metric` plateaus. Default is True.
+    lr_factor : Tunable[float], optional
+        Factor to reduce learning rate. Default is 0.6.
+    lr_patience : Tunable[int], optional
+        Number of epochs with no improvement after which learning rate will be reduced. Default is 30.
+    lr_threshold : Tunable[float], optional
+        Threshold for measuring the new optimum. Default is 0.0.
+    lr_scheduler_metric : Literal["loss_validation"], optional
+        Which metric to track for learning rate reduction. Default is "loss_validation".
+    lr_min : float, optional
+        Minimum learning rate allowed. Default is 0.
+    scale_adversarial_loss : Union[float, Literal["auto"]], optional
         Scaling factor on the adversarial components of the loss.
         By default, adversarial loss is scaled from 1 to 0 following opposite of
-        kl warmup.
+        kl warmup. Default is "auto".
+    ensemble_method_cf : bool, optional
+        Whether to use the new counterfactual method. Default is True.
+    kappa_optimizer2 : bool, optional
+        Whether to use the second kappa optimizer. Default is True.
     **loss_kwargs
         Keyword args to pass to the loss method of the `module`.
         `kl_weight` should not be passed here and is handled automatically.
@@ -90,10 +108,75 @@ class CellDISECTTrainingPlan(TrainingPlan):
         lr_scheduler_metric: Literal["loss_validation"] = "loss_validation",
         lr_min: float = 0,
         scale_adversarial_loss: Union[float, Literal["auto"]] = "auto",
-        new_cf_method: bool = True, # CHANGE LATER
+        ensemble_method_cf: bool = True,
         kappa_optimizer2: bool = True,
         **loss_kwargs,
     ):
+        """
+        Initialize the CellDISECTTrainingPlan.
+
+        Parameters
+        ----------
+        module : BaseModuleClass
+            A module instance from class ``BaseModuleClass``.
+        recon_weight : Tunable[Union[float, int]]
+            Weight for the reconstruction loss of X.
+        cf_weight : Tunable[Union[float, int]]
+            Weight for the reconstruction loss of X_cf.
+        beta : Tunable[Union[float, int]]
+            Weight for the KL divergence of Zi.
+        clf_weight : Tunable[Union[float, int]]
+            Weight for the Si classifier loss.
+        adv_clf_weight : Tunable[Union[float, int]]
+            Weight for the adversarial classifier loss.
+        adv_period : Tunable[int]
+            Adversarial training period.
+        n_cf : Tunable[int]
+            Number of X_cf reconstructions (a random permutation of n VAEs and a random half-batch subset for each trial).
+        optimizer : Tunable[Literal["Adam", "AdamW", "Custom"]], optional
+            One of "Adam" (:class:`~torch.optim.Adam`), "AdamW" (:class:`~torch.optim.AdamW`),
+            or "Custom", which requires a custom optimizer creator callable to be passed via
+            `optimizer_creator`. Default is "Adam".
+        optimizer_creator : Optional[TorchOptimizerCreator], optional
+            A callable taking in parameters and returning a :class:`~torch.optim.Optimizer`.
+            This allows using any PyTorch optimizer with custom hyperparameters. Default is None.
+        lr : Tunable[float], optional
+            Learning rate used for optimization, when `optimizer_creator` is None. Default is 1e-3.
+        weight_decay : Tunable[float], optional
+            Weight decay used in optimization, when `optimizer_creator` is None. Default is 1e-6.
+        n_steps_kl_warmup : Tunable[int], optional
+            Number of training steps (minibatches) to scale weight on KL divergences from 0 to 1.
+            Only activated when `n_epochs_kl_warmup` is set to None. Default is None.
+        n_epochs_kl_warmup : Tunable[int], optional
+            Number of epochs to scale weight on KL divergences from 0 to 1.
+            Overrides `n_steps_kl_warmup` when both are not `None`. Default is 400.
+        n_epochs_pretrain_ae : Tunable[int], optional
+            Number of epochs to pretrain the autoencoder. Default is 0.
+        reduce_lr_on_plateau : Tunable[bool], optional
+            Whether to monitor validation loss and reduce learning rate when validation set
+            `lr_scheduler_metric` plateaus. Default is True.
+        lr_factor : Tunable[float], optional
+            Factor to reduce learning rate. Default is 0.6.
+        lr_patience : Tunable[int], optional
+            Number of epochs with no improvement after which learning rate will be reduced. Default is 30.
+        lr_threshold : Tunable[float], optional
+            Threshold for measuring the new optimum. Default is 0.0.
+        lr_scheduler_metric : Literal["loss_validation"], optional
+            Which metric to track for learning rate reduction. Default is "loss_validation".
+        lr_min : float, optional
+            Minimum learning rate allowed. Default is 0.
+        scale_adversarial_loss : Union[float, Literal["auto"]], optional
+            Scaling factor on the adversarial components of the loss.
+            By default, adversarial loss is scaled from 1 to 0 following opposite of
+            kl warmup. Default is "auto".
+        ensemble_method_cf : bool, optional
+            Whether to use the new counterfactual method. Default is True.
+        kappa_optimizer2 : bool, optional
+            Whether to use the second kappa optimizer. Default is True.
+        **loss_kwargs
+            Keyword args to pass to the loss method of the `module`.
+            `kl_weight` should not be passed here and is handled automatically.
+        """
         super().__init__(
             module=module,
             optimizer=optimizer,
@@ -120,7 +203,7 @@ class CellDISECTTrainingPlan(TrainingPlan):
                                  "beta": beta,
                                  "clf_weight": clf_weight,
                                  "n_cf": n_cf,
-                                 "new_cf_method": new_cf_method, # CHANGE LATER
+                                 "ensemble_method_cf": ensemble_method_cf,
                                 })
 
         self.module = module
@@ -181,23 +264,25 @@ class CellDISECTTrainingPlan(TrainingPlan):
             metrics: Dict[str, ElboMetric],
             mode: str,
     ):
-        """Computes and logs metrics.
+        """
+        Computes and logs metrics.
+
+        This function updates the provided metrics dictionary with the values from the loss output
+        and logs them using the appropriate logging method.
 
         Parameters
         ----------
-        loss_output
-            LossOutput dict from scvi-tools module
-        metrics
-            Dictionary of metrics to update
-        mode
-            Postfix string to add to the metric name of
-            extra metrics
+        loss_output : dict
+            Dictionary containing the loss output from the scvi-tools module.
+        metrics : Dict[str, ElboMetric]
+            Dictionary of metrics to update.
+        mode : str
+            Postfix string to add to the metric name for extra metrics.
         """
-
         for met_name in loss_output:
             metrics[f"{met_name}_{mode}"] = loss_output[met_name]
             if isinstance(loss_output[met_name], dict):
-                # add mode to loss_output[met_name]'s keys
+                # Add mode to loss_output[met_name]'s keys
                 keys = list(loss_output[met_name].keys())
                 for key in keys:
                     loss_output[met_name][f"{key}_{mode}"] = loss_output[met_name][key]
@@ -218,13 +303,30 @@ class CellDISECTTrainingPlan(TrainingPlan):
                 )
 
     def adv_classifier_metrics(self, inference_outputs, detach_z=True):
-        """Loss for adversarial classifier."""
+        """
+        Computes the loss for the adversarial classifier.
+
+        This function calculates the classification metrics for the adversarial classifier
+        using the provided inference outputs.
+
+        Parameters
+        ----------
+        inference_outputs : dict
+            Dictionary containing the outputs from the inference step.
+        detach_z : bool, optional
+            Whether to detach the latent representation `z`, by default True.
+
+        Returns
+        -------
+        tuple
+            A tuple containing the mean CE loss, accuracy, and F1 score.
+        """
         z_shared = inference_outputs["z_shared"]
         zs = inference_outputs["zs"]
         cat_covs = inference_outputs["cat_covs"]
 
         if detach_z:
-            # detach z
+            # Detach z
             zs = [zs_i.detach() for zs_i in zs]
             z_shared = z_shared.detach()
 

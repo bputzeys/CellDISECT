@@ -46,43 +46,43 @@ class CellDISECT(
     TunableMixin
 ):
     """
+    CellDISECT model for single-cell RNA sequencing data analysis.
+
     Parameters
     ----------
-    adata
+    adata : AnnData
         AnnData object that has been registered via :meth:`~scvi.model.SCVI.setup_anndata`.
-    n_hidden
+    n_hidden : int
         Number of nodes per hidden layer.
-    n_latent
-        Dimensionality of the latent space.
-    n_layers
-        Number of hidden layers used for encoder and decoder NNs.
-    dropout_rate
+    n_latent_shared : int
+        Dimensionality of the shared latent space.
+    n_latent_attribute : int
+        Dimensionality of the latent space for each sensitive attribute.
+    n_layers : int
+        Number of hidden layers used for encoder and decoder neural networks.
+    dropout_rate : float
         Dropout rate for neural networks.
-    dispersion
-        One of the following:
-        * ``'gene'`` - dispersion parameter of NB is constant per gene across cells
-        * ``'gene-batch'`` - dispersion can differ between different batches
-        * ``'gene-label'`` - dispersion can differ between different labels
-        * ``'gene-cell'`` - dispersion can differ for every gene in every cell
-    gene_likelihood
+    gene_likelihood : str
         One of:
         * ``'nb'`` - Negative binomial distribution
         * ``'zinb'`` - Zero-inflated negative binomial distribution
         * ``'poisson'`` - Poisson distribution
-    latent_distribution
+    latent_distribution : str
         One of:
         * ``'normal'`` - Normal distribution
         * ``'ln'`` - Logistic normal distribution (Normal(0, I) transformed by softmax)
-    **model_kwargs
-        Keyword args for :class:`~scvi.module.VAE`
-    Examples
-    --------
-    >>> adata = anndata.read_h5ad(path_to_anndata)
-    >>> CellDISECT.setup_anndata(adata, batch_key="batch")
-    >>> vae = CellDISECT(adata)
-    >>> vae.train()
-    >>> adata.obsm["X_scVI"] = vae.get_latent_representation()
-    >>> adata.obsm["X_normalized_scVI"] = vae.get_normalized_expression()
+    split_key : str, optional
+        Key in `adata.obs` to split the data into training, validation, and test sets.
+    train_split : Union[str, List[str]], optional
+        Values in `split_key` to be used for training.
+    valid_split : Union[str, List[str]], optional
+        Values in `split_key` to be used for validation.
+    test_split : Union[str, List[str]], optional
+        Values in `split_key` to be used for testing.
+    weighted_classifier : bool, optional
+        Whether to use weighted classifiers for categorical covariates.
+    **model_kwargs : dict
+        Additional keyword arguments for the model.
     """
 
     _module_cls = CellDISECTModule
@@ -107,9 +107,43 @@ class CellDISECT(
             weighted_classifier=False,
             **model_kwargs,
     ):
+        """
+        Initialize the CellDISECT model.
+
+        Parameters
+        ----------
+        adata : AnnData
+            AnnData object that has been registered via :meth:`~scvi.model.SCVI.setup_anndata`.
+        n_hidden : int, optional
+            Number of nodes per hidden layer, by default 128.
+        n_latent_shared : int, optional
+            Dimensionality of the shared latent space, by default 10.
+        n_latent_attribute : int, optional
+            Dimensionality of the latent space for each sensitive attribute, by default 10.
+        n_layers : int, optional
+            Number of hidden layers used for encoder and decoder neural networks, by default 1.
+        dropout_rate : float, optional
+            Dropout rate for neural networks, by default 0.1.
+        gene_likelihood : Literal["zinb", "nb", "poisson"], optional
+            Gene likelihood distribution, by default "zinb".
+        latent_distribution : Literal["normal", "ln"], optional
+            Latent distribution, by default "normal".
+        split_key : str, optional
+            Key in `adata.obs` to split the data into training, validation, and test sets, by default None.
+        train_split : Union[str, List[str]], optional
+            Values in `split_key` to be used for training, by default ["train"].
+        valid_split : Union[str, List[str]], optional
+            Values in `split_key` to be used for validation, by default ["valid"].
+        test_split : Union[str, List[str]], optional
+            Values in `split_key` to be used for testing, by default ["ood"].
+        weighted_classifier : bool, optional
+            Whether to use weighted classifiers for categorical covariates, by default False.
+        **model_kwargs : dict
+            Additional keyword arguments for the model.
+        """
         super().__init__(adata)
 
-        self._data_loader_cls = AnnDataLoader 
+        self._data_loader_cls = AnnDataLoader
         self.split_key = split_key
         n_cats_per_cov = (
             self.adata_manager.get_state_registry(
@@ -153,7 +187,7 @@ class CellDISECT(
             self.train_indices = train_indices
             self.valid_indices = valid_indices
             self.test_indices = test_indices
-            
+
         self._model_summary_string = (
             "CellDISECT Model with the following params: \nn_hidden: {}, n_latent_shared: {}, n_latent_attribute: {}"
             ", n_layers: {}, dropout_rate: {}, gene_likelihood: {}, latent_distribution: {}"
@@ -183,16 +217,37 @@ class CellDISECT(
             clustering_normalize_counts: bool = True,
             **kwargs,
     ):
-        """%(summary)s.
+        """
+        Set up the AnnData object for the CellDISECT model.
+
+        This method configures the AnnData object by registering the necessary fields and optionally adding a cluster covariate.
+
         Parameters
         ----------
-        %(param_adata)s
-        %(param_layer)s
-        %(param_batch_key)s
-        %(param_labels_key)s
-        %(param_size_factor_key)s
-        %(param_cat_cov_keys)s
-        %(param_cont_cov_keys)s
+        adata : AnnData
+            AnnData object to be set up.
+        layer : Optional[str], optional
+            Layer in `adata` to use as the count data, by default None.
+        batch_key : Optional[str], optional
+            Key in `adata.obs` for batch information, by default None.
+        labels_key : Optional[str], optional
+            Key in `adata.obs` for labels, by default None.
+        size_factor_key : Optional[str], optional
+            Key in `adata.obs` for size factors, by default None.
+        categorical_covariate_keys : Optional[List[str]], optional
+            List of keys in `adata.obs` for categorical covariates, by default None.
+        continuous_covariate_keys : Optional[List[str]], optional
+            List of keys in `adata.obs` for continuous covariates, by default None.
+        add_cluster_covariate : bool, optional
+            Whether to add a cluster covariate to `adata.obs`, by default False.
+        clustering_normalize_counts : bool, optional
+            Whether to normalize counts before clustering, by default True.
+        **kwargs
+            Additional keyword arguments.
+
+        Returns
+        -------
+        None
         """
         setup_method_args = cls._get_setup_method_args(**locals())
         if add_cluster_covariate:
@@ -200,10 +255,6 @@ class CellDISECT(
                 adata,
                 normalize_counts=clustering_normalize_counts
                 )
-            # if categorical_covariate_keys is None:
-            #     categorical_covariate_keys = ['_cluster']
-            # else:
-            #     categorical_covariate_keys = categorical_covariate_keys + ['_cluster']
 
         anndata_fields = [
             LayerField(REGISTRY_KEYS.X_KEY, layer, is_count_data=True),
@@ -232,16 +283,23 @@ class CellDISECT(
 
     @classmethod
     def add_cluster_covariate(
-        cls, 
+        cls,
         adata: AnnData,
         normalize_counts: bool = True):
         """
-        Run PCA on the gene expression matrics
-        and run leiden clustering on the PCA components
-        to create a cluster covariate to be added to the adata.obs
-        
-        normalize_counts: bool
-            If True, takes the counts from the adata.layers['counts'] and log normalizes them
+        Run PCA on the gene expression matrix and run Leiden clustering on the PCA components
+        to create a cluster covariate to be added to the `adata.obs`.
+
+        Parameters
+        ----------
+        adata : AnnData
+            AnnData object containing the single-cell RNA sequencing data.
+        normalize_counts : bool, optional
+            If True, takes the counts from the `adata.layers['counts']` and log normalizes them, by default True.
+
+        Returns
+        -------
+        None
         """
         logger.info("Adding cluster covariate to adata.obs")
         if '_cluster' in adata.obs.keys():
@@ -256,15 +314,15 @@ class CellDISECT(
             sc.pp.normalize_total(adata)
             # Logarithmize the data
             sc.pp.log1p(adata)
-        
+
         logger.info("Running PCA and Leiden clustering")
         sc.tl.pca(adata, random_state=0)
         sc.pp.neighbors(adata, use_rep='X_pca', random_state=0)
         sc.tl.leiden(adata, key_added='_cluster', flavor='igraph', n_iterations=2, random_state=0)
-        
+
         return
         
-        
+
     # call this method after training the model with this held-out:
     # covs[cov_idx] = cov_value_cf, covs[others_idx] = adata.obs[others_idx]
     @torch.no_grad()
@@ -315,51 +373,61 @@ class CellDISECT(
 
     @torch.no_grad()
     def predict_counterfactuals(
-                    self,
-                    adata: AnnData,
-                    cov_names: list[str],
-                    cov_values: list[str],
-                    cov_values_cf: list[str],
-                    cats: list[str],
-                    n_samples_from_source: Optional[int] = None,
-                    seed: Optional[int] = 0):
+            self,
+            adata: AnnData,
+            cov_names: list[str],
+            cov_values: list[str],
+            cov_values_cf: list[str],
+            cats: list[str],
+            n_samples_from_source: Optional[int] = None,
+            seed: Optional[int] = 0
+    ):
         """
         Predicts counterfactuals for a given subset of data.
 
         This function estimates the counterfactual outcomes for a subset of data based on specified changes in covariate values.
 
-        Parameters:
-            adata (AnnData): The subset of the data for which the counterfactuals are to be predicted.
-            cov_names (list[str]): Names of the covariates that are to be changed.
-            cov_values (list[str]): Original values for the covariates that are to be changed.
-            cov_values_cf (list[str]): Counterfactual values for the covariates that are to be changed.
-            cats (list[str]): Names of the categorical covariates.
-            n_samples_from_source (Optional[int], optional): Number of samples to take from the source data 
-                to predict the counterfactuals. If None, all samples from the source data are used. Defaults to None.
-            seed (Optional[int], optional): Random seed for reproducibility. Defaults to 0. Only used if `n_samples_from_source` is not None.
+        Parameters
+        ----------
+        adata : AnnData
+            The subset of the data for which the counterfactuals are to be predicted.
+        cov_names : list[str]
+            Names of the covariates that are to be changed.
+        cov_values : list[str]
+            Original values for the covariates that are to be changed.
+        cov_values_cf : list[str]
+            Counterfactual values for the covariates that are to be changed.
+        cats : list[str]
+            Names of the categorical covariates.
+        n_samples_from_source : Optional[int], optional
+            Number of samples to take from the source data to predict the counterfactuals. If None, all samples from the source data are used. Defaults to None.
+        seed : Optional[int], optional
+            Random seed for reproducibility. Defaults to 0. Only used if `n_samples_from_source` is not None.
 
-        Returns:
-            Tuple[torch.Tensor, torch.Tensor, torch.Tensor]: 
-                Control (source), True Counterfactuals, and Predicted Counterfactual COUNTS. (not log-transformed)
-                
-        Example:
-        - Single covariate change: (Going from ctrl to stimulated condition in CD4 T cells)
+        Returns
+        -------
+        Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+            Control (source), True Counterfactuals, and Predicted Counterfactual COUNTS (not log-transformed).
+
+        Examples
+        --------
+        Single covariate change:
             cats = ['cell_type', 'condition']
             cell_type_to_check = ['CD4 T',]
             cov_names = ['condition']
             cov_values = ['ctrl']
             cov_values_cf = ['stimulated']
             n_samples_from_source = 500
-            x_ctrl, x_true, x_pred = pred_our_ood_avg(,
-                                                    adata[(adata.obs['cell_type'].isin(cell_type_to_check))].copy(),
-                                                    cov_names=cov_names,
-                                                    cov_values=cov_values,
-                                                    cov_values_cf=cov_values_cf,
-                                                    cats=cats,
-                                                    n_samples_from_source=n_samples_from_source,
-                                                    )
-        
-        - Multiple covariate change: (Going from female breast to male prostate gland in Epithelial cell (luminal) cells)
+            x_ctrl, x_true, x_pred = model.predict_counterfactuals(
+                adata[(adata.obs['cell_type'].isin(cell_type_to_check))].copy(),
+                cov_names=cov_names,
+                cov_values=cov_values,
+                cov_values_cf=cov_values_cf,
+                cats=cats,
+                n_samples_from_source=n_samples_from_source,
+            )
+
+        Multiple covariate change:
             cats = ['tissue', 'Sample ID', 'sex', 'Age_bin', 'CoarseCellType']
             cell_type_to_check = 'Epithelial cell (luminal)'
 
@@ -367,41 +435,50 @@ class CellDISECT(
             cov_values = ['female', 'breast']
             cov_values_cf = ['male', 'prostate gland']
             n_samples_from_source = None
-            x_ctrl, x_true, x_pred = model.predict_counterfactuals(,
-                                                    adata[adata.obs['Broad cell type'] == cell_type_to_check].copy(), # We want to do 
-                                                                        # counterfactuals in the mentioned covariates, in this cell type
-                                                    cov_names=cov_names,
-                                                    cov_values=cov_values,
-                                                    cov_values_cf=cov_values_cf,
-                                                    cats=cats,
-                                                    n_samples_from_source=n_samples_from_source,
-                                                    )
+            x_ctrl, x_true, x_pred = model.predict_counterfactuals(
+                adata[adata.obs['Broad cell type'] == cell_type_to_check].copy(),
+                cov_names=cov_names,
+                cov_values=cov_values,
+                cov_values_cf=cov_values_cf,
+                cats=cats,
+                n_samples_from_source=n_samples_from_source,
+            )
         """
+        # Copy the counts layer to the main matrix
         adata.X = adata.layers['counts'].copy()
         adata.obs['idx'] = [i for i in range(len(adata))]
 
-        true_indices = pd.DataFrame([adata.obs[cov_name] == cov_values_cf[i] for i, cov_name in enumerate(cov_names)]).all(0).values
+        # Identify true and source indices based on covariate values
+        true_indices = pd.DataFrame(
+            [adata.obs[cov_name] == cov_values_cf[i] for i, cov_name in enumerate(cov_names)]
+            ).all(0).values
         true_idx = list(adata[true_indices].obs['idx'])
-        
-        source_indices = pd.DataFrame([adata.obs[cov_name] == cov_values[i] for i, cov_name in enumerate(cov_names)]).all(0).values
+
+        source_indices = pd.DataFrame(
+            [adata.obs[cov_name] == cov_values[i] for i, cov_name in enumerate(cov_names)]
+            ).all(0).values
         source_idx = list(adata[source_indices].obs['idx'])
 
+        # Create true and source AnnData objects
         true_adata = adata[adata.obs['idx'].isin(true_idx)].copy()
         source_adata = adata[adata.obs['idx'].isin(source_idx)].copy()
 
+        # Sample from source data if specified
         if n_samples_from_source is not None:
             random.seed(seed)
             chosen_ids = random.sample(range(len(source_adata)), n_samples_from_source)
             source_adata = source_adata[chosen_ids].copy()
         adata_cf = source_adata.copy()
-            
-        
+
+        # Update covariate values in the counterfactual data
         for i, cov_name in enumerate(cov_names):
             adata_cf.obs.loc[:, cov_name] = pd.Categorical(
-                [cov_values_cf[i] for _ in adata_cf.obs[cov_name]])
+                [cov_values_cf[i] for _ in adata_cf.obs[cov_name]]
+            )
         batch_size = len(adata_cf)
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
+        # Setup AnnData for the counterfactual data
         self.setup_anndata(
             adata_cf,
             layer='counts',
@@ -410,20 +487,23 @@ class CellDISECT(
         )
         adata_cf = self._validate_anndata(adata_cf)
         source_adata = self._validate_anndata(source_adata)
-        # print("Data loader OOD")
+
+        # Create data loaders for source and counterfactual data
         scdl_cf = self._make_data_loader(
             adata=adata_cf, batch_size=batch_size
         )
         scdl = self._make_data_loader(
             adata=source_adata, batch_size=batch_size
         )
-        # cov_idx = cats.index(cov_name)
+
+        # Predict counterfactuals
         px_cf_mean_list = []
         for tensors, tensors_cf in zip(scdl, scdl_cf):
             _, pxs_cf = self.module.sub_forward_cf_avg(
-                                x=tensors[REGISTRY_KEYS.X_KEY].to(device),
-                                cat_covs=tensors[REGISTRY_KEYS.CAT_COVS_KEY].to(device),
-                                cat_covs_cf=tensors_cf[REGISTRY_KEYS.CAT_COVS_KEY].to(device))
+                x=tensors[REGISTRY_KEYS.X_KEY].to(device),
+                cat_covs=tensors[REGISTRY_KEYS.CAT_COVS_KEY].to(device),
+                cat_covs_cf=tensors_cf[REGISTRY_KEYS.CAT_COVS_KEY].to(device)
+            )
 
             for px_cf in pxs_cf:
                 if px_cf is None:
@@ -431,17 +511,19 @@ class CellDISECT(
                 x_cf = px_cf.mu
                 px_cf_mean_list.append(x_cf)
 
+        # Compute mean predictions
         px_cf_mean_tensor = torch.stack(px_cf_mean_list, dim=0)
-        
-        px_cf_mean_pred = torch.mean(px_cf_mean_tensor, dim=0) # (n_cells, n_genes)
+        px_cf_mean_pred = torch.mean(px_cf_mean_tensor, dim=0)  # (n_cells, n_genes)
 
+        # Convert predictions to numpy arrays
         px_cf_mean_pred = px_cf_mean_pred.to('cpu').detach().numpy()
-        
         px_cf_mean_tensor = px_cf_mean_tensor.to('cpu').detach().numpy()
 
+        # Create AnnData object for predictions
         px_cf_mean_tensor = ad.AnnData(px_cf_mean_pred)
         px_cf_mean_tensor = torch.tensor(px_cf_mean_tensor.X)
 
+        # Get true and control counts
         true_x_count = torch.tensor(true_adata.X)
         cf_x_count = torch.tensor(source_adata.X)
 
@@ -462,18 +544,29 @@ class CellDISECT(
             nullify_shared: Optional[bool] = False
     ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
         """
+        Get the latent representation of the data.
+
+        This function computes the latent representation of the data using the trained model.
+        It allows for optional nullification of specific categorical covariates or the shared latent space.
+
         Parameters
         ----------
-        adata
-            Annotated data object.
-        indices
-            Optional indices.
-        batch_size
-            Batch size to use.
-        nullify_cat_covs_indices
-            Categorical attributes to nullify in the latent space.
-        nullify_shared
-            nullify Z_shared
+        adata : Optional[AnnData]
+            Annotated data object. If None, uses the data registered with the model.
+        indices : Optional[Sequence[int]]
+            Optional indices to subset the data.
+        batch_size : Optional[int]
+            Batch size to use for data loading. If None, uses the default batch size.
+        nullify_cat_covs_indices : Optional[List[int]]
+            List of indices of categorical covariates to nullify in the latent space. If None, no covariates are nullified.
+        nullify_shared : Optional[bool]
+            If True, nullifies the shared latent space. Defaults to False.
+
+        Returns
+        -------
+        Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]
+            The latent representation of the data. If `nullify_cat_covs_indices` or `nullify_shared` is specified,
+            returns a tuple of the latent representation and the nullified latent representation.
         """
         self._check_if_trained(warn=False)
 
@@ -496,20 +589,36 @@ class CellDISECT(
     def get_cat_covariate_latents(
             self,
     ):
-        """Returns the embeddings of the categorical covariates."""
+        """
+        Returns the embeddings of the categorical covariates.
+
+        This function retrieves the embeddings of the categorical covariates from the trained model.
+        It also returns the mappings of the categorical covariates.
+
+        Parameters
+        ----------
+        self : object
+            The instance of the class.
+
+        Returns
+        -------
+        Tuple[dict, dict]
+            A tuple containing two dictionaries:
+            - covar_embeddings: Dictionary where keys are covariate names and values are the embeddings as numpy arrays.
+            - covar_mappings: Dictionary where keys are covariate names and values are the mappings of the covariates.
+        """
         self._check_if_trained(warn=False)
         covar_names = self.adata_manager.get_state_registry(REGISTRY_KEYS.CAT_COVS_KEY).values()[0]
-        
+
         covar_embeddings = {}
         covar_mappings = {}
         for name, emb in zip(covar_names, self.module.covars_embeddings.values()):
             mappings = self.adata_manager.get_state_registry(REGISTRY_KEYS.CAT_COVS_KEY)['mappings'][name]
             covar_embeddings[name] = emb.weight.cpu().detach().numpy()
             covar_mappings[name] = mappings
-        
+
         return covar_embeddings, covar_mappings
 
-    # @devices_dsp.dedent
     def train(
             self,
             max_epochs: Optional[int] = None,
@@ -531,47 +640,52 @@ class CellDISECT(
             n_epochs_pretrain_ae: int = 0,
             **trainer_kwargs,
     ):
-        """Train the model.
+        """
+        Train the model.
+
         Parameters
         ----------
-        max_epochs
-            Number of passes through the dataset. If `None`, defaults to
-            `np.min([round((20000 / n_cells) * 400), 400])`
-        %(param_use_gpu)s
-        %(param_accelerator)s
-        %(param_devices)s
-        train_size
-            Size of training set in the range [0.0, 1.0].
-        validation_size
-            Size of the test set. If `None`, defaults to 1 - `train_size`. If
-            `train_size + validation_size < 1`, the remaining cells belong to a test set.
-        batch_size
+        max_epochs : Optional[int]
+            Number of passes through the dataset. If `None`, defaults to `np.min([round((20000 / n_cells) * 400), 400])`.
+        use_gpu : Optional[Union[str, int, bool]]
+            Whether to use GPU for training. Can be a boolean, string, or integer specifying the GPU device.
+        train_size : float
+            Size of the training set in the range [0.0, 1.0].
+        validation_size : Optional[float]
+            Size of the validation set. If `None`, defaults to 1 - `train_size`. If `train_size + validation_size < 1`, the remaining cells belong to a test set.
+        batch_size : int
             Minibatch size to use during training.
-        early_stopping
-            Perform early stopping. Additional arguments can be passed in `**kwargs`.
-            See :class:`~scvi.train.Trainer` for further options.
-        plan_kwargs
-            Keyword args for :class:`~scvi.train.TrainingPlan`. Keyword arguments passed to
-            `train()` will overwrite values present in `plan_kwargs`, when appropriate.
-        cf_weight
-            RECONST_LOSS_X_CF weight
-        beta
-            KL Zi weight
-        clf_weight
-            Si classifier weight
-        adv_clf_weight
-            adversarial classifier weight
-        adv_period
-            adversarial training period
-        n_cf
-            number of X_cf recons (a random permutation of n VAEs and a random half-batch subset for each trial)
-        save_best
-            Save the best model state with respect to the validation loss (default), or use the final
-            state in the training procedure
+        early_stopping : bool
+            Perform early stopping. Additional arguments can be passed in `**kwargs`. See :class:`~scvi.train.Trainer` for further options.
+        save_best : bool
+            Save the best model state with respect to the validation loss (default), or use the final state in the training procedure.
+        plan_kwargs : Optional[dict]
+            Keyword arguments for :class:`~scvi.train.TrainingPlan`. Keyword arguments passed to `train()` will overwrite values present in `plan_kwargs`, when appropriate.
+        recon_weight : Tunable[Union[float, int]]
+            Weight for the reconstruction loss of X.
+        cf_weight : Tunable[Union[float, int]]
+            Weight for the reconstruction loss of X_cf.
+        beta : Tunable[Union[float, int]]
+            Weight for the KL divergence of Zi.
+        clf_weight : Tunable[Union[float, int]]
+            Weight for the Si classifier loss.
+        adv_clf_weight : Tunable[Union[float, int]]
+            Weight for the adversarial classifier loss.
+        adv_period : Tunable[int]
+            Adversarial training period.
+        n_cf : Tunable[int]
+            Number of X_cf reconstructions (a random permutation of n VAEs and a random half-batch subset for each trial).
+        kappa_optimizer2 : bool
+            Whether to use the second kappa optimizer.
+        n_epochs_pretrain_ae : int
+            Number of epochs to pretrain the autoencoder.
         **trainer_kwargs
-            Other keyword args for :class:`~scvi.train.Trainer`.
-        """
+            Other keyword arguments for :class:`~scvi.train.Trainer`.
 
+        Returns
+        -------
+        None
+        """
         n_cells = self.adata.n_obs
         if max_epochs is None:
             max_epochs = int(np.min([round((20000 / n_cells) * 400), 400]))
@@ -595,7 +709,7 @@ class CellDISECT(
                 validation_size=validation_size,
                 batch_size=batch_size,
             )
-            
+
         training_plan = self._training_plan_cls(self.module,
                                                 recon_weight=recon_weight,
                                                 cf_weight=cf_weight,
@@ -619,7 +733,7 @@ class CellDISECT(
             )
             trainer_kwargs["callbacks"] = [] if "callbacks" not in trainer_kwargs else trainer_kwargs["callbacks"]
             trainer_kwargs["callbacks"].append(checkpoint)
-        
+
         trainer_kwargs['enable_checkpointing'] = True
 
         trainer_kwargs['early_stopping_monitor'] = "loss_validation"
