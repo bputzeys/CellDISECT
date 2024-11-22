@@ -7,7 +7,7 @@
 [comment]: [![Docs](https://readthedocs.org/projects/celldisect/badge/?version=latest)](https://celldisect.readthedocs.io/en/stable/?badge=stable)
 
 # Cell DISentangled Experts for Covariate counTerfactuals (CellDISECT)
-Causal generative model designed to disentangle known covariate variations from unknown ones at test time while simultaneously learning to make counterfactual predictions. CellDISECT finds multiple latent representations for each cell.
+Causal generative model designed to disentangle known covariate variations from unknown ones at test time while simultaneously learning to make counterfactual predictions. CellDISECT finds multiple latent representations for each cell, one unsupervised, and the provided covariates weakly supervise the rest.
 
 
 Installation
