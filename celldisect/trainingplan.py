@@ -75,7 +75,7 @@ class CellDISECTTrainingPlan(TrainingPlan):
         Scaling factor on the adversarial components of the loss.
         By default, adversarial loss is scaled from 1 to 0 following opposite of
         kl warmup. Default is "auto".
-    new_cf_method : bool, optional
+    ensemble_method_cf : bool, optional
         Whether to use the new counterfactual method. Default is True.
     kappa_optimizer2 : bool, optional
         Whether to use the second kappa optimizer. Default is True.
@@ -108,7 +108,7 @@ class CellDISECTTrainingPlan(TrainingPlan):
         lr_scheduler_metric: Literal["loss_validation"] = "loss_validation",
         lr_min: float = 0,
         scale_adversarial_loss: Union[float, Literal["auto"]] = "auto",
-        new_cf_method: bool = True, # CHANGE LATER
+        ensemble_method_cf: bool = True,
         kappa_optimizer2: bool = True,
         **loss_kwargs,
     ):
@@ -169,7 +169,7 @@ class CellDISECTTrainingPlan(TrainingPlan):
             Scaling factor on the adversarial components of the loss.
             By default, adversarial loss is scaled from 1 to 0 following opposite of
             kl warmup. Default is "auto".
-        new_cf_method : bool, optional
+        ensemble_method_cf : bool, optional
             Whether to use the new counterfactual method. Default is True.
         kappa_optimizer2 : bool, optional
             Whether to use the second kappa optimizer. Default is True.
@@ -203,7 +203,7 @@ class CellDISECTTrainingPlan(TrainingPlan):
                                  "beta": beta,
                                  "clf_weight": clf_weight,
                                  "n_cf": n_cf,
-                                 "new_cf_method": new_cf_method, # CHANGE LATER
+                                 "ensemble_method_cf": ensemble_method_cf,
                                 })
 
         self.module = module

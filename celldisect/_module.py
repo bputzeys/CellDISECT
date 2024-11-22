@@ -919,7 +919,7 @@ class CellDISECTModule(BaseModuleClass):
             clf_weight: Tunable[Union[float, int]],  # Si classifier weight
             n_cf: Tunable[int],  # number of X_cf recons (X_cf = a random permutation of X)
             kl_weight: float = 1.0,
-            new_cf_method=True, # CHANGE LATER
+            ensemble_method_cf=True,
     ):
         """
         Compute the loss for the model.
@@ -944,7 +944,7 @@ class CellDISECTModule(BaseModuleClass):
             Number of X_cf reconstructions (X_cf = a random permutation of X).
         kl_weight : float, optional
             Weight for the KL divergence, by default 1.0.
-        new_cf_method : bool, optional
+        ensemble_method_cf : bool, optional
             Whether to use the new counterfactual method, by default True.
 
         Returns
@@ -1003,7 +1003,7 @@ class CellDISECTModule(BaseModuleClass):
             perm = list(range(self.zs_num))
             random.shuffle(perm)
 
-            if new_cf_method:
+            if ensemble_method_cf:
                 # This is going to tell us which covariates are different between
                 # cat_covs and cat_cov_cf in each row of cat_covs and cat_cov_cf
                 cf_difference = (cat_covs == cat_cov_cf).to(device) # batch_size x n_cat_covs: bool
