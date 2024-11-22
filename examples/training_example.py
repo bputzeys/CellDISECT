@@ -58,7 +58,7 @@ train_dict = {
 plan_kwargs = {
  'lr': 0.003,
  'weight_decay': 0.00005,
- 'new_cf_method': True,
+ 'ensemble_method_cf': True,
  'lr_patience': 5,
  'lr_factor': 0.5,
  'lr_scheduler_metric': 'loss_validation',
@@ -78,7 +78,7 @@ model_name = (
     f'n_cf_{train_dict["n_cf"]}_'
     f'lr_{plan_kwargs["lr"]}_'
     f'wd_{plan_kwargs["weight_decay"]}_'
-    f'new_cf_{plan_kwargs["new_cf_method"]}_'
+    f'ensemble_cf_{plan_kwargs["ensemble_method_cf"]}_'
     f'dropout_{arch_dict["dropout_rate"]}_'
     f'n_hidden_{arch_dict["n_hidden"]}_'
     f'n_latent_{arch_dict["n_latent_shared"]}_'
