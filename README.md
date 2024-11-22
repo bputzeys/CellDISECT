@@ -1,3 +1,11 @@
+[![PyPI version](https://badge.fury.io/py/celldisect.svg)](https://badge.fury.io/py/celldisect)
+[![License](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](https://github.com/Lotfollahi-lab/celldisect/blob/main/LICENSE)
+[![Stars](https://img.shields.io/github/stars/Lotfollahi-lab/celldisect?logo=GitHub&color=yellow)](https://github.com/Lotfollahi-lab/celldisect/stargazers)
+
+[comment]: [![PyPIDownloads](https://static.pepy.tech/badge/celldisect)](https://pepy.tech/project/celldisect)
+
+[comment]: [![Docs](https://readthedocs.org/projects/celldisect/badge/?version=latest)](https://celldisect.readthedocs.io/en/stable/?badge=stable)
+
 # Cell DISentangled Experts for Covariate counTerfactuals (CellDISECT)
 Causal generative model designed to disentangle known covariate variations from unknown ones at test time while simultaneously learning to make counterfactual predictions.
 
