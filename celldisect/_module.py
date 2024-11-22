@@ -512,19 +512,27 @@ class CellDISECTModule(BaseModuleClass):
                     detach_x=False,
                     detach_z=False):
         """
-        performs forward (inference + generative) only on enc/dec idx
-        Explaination:
-            I need to write a good explaination here later, because it's a little confusing. #TODO
-            
+        Perform counterfactual forward pass for a specific encoder/decoder.
+
         Parameters
         ----------
-        idx
-            index of enc/dec in [1, ..., self.zs_num]
-        x
-        cat_covs
-        detach_x
-        detach_z
+        idx : int
+            Index of the encoder/decoder to use.
+        x : torch.Tensor
+            Input gene expression data.
+        cat_covs : torch.Tensor
+            Original categorical covariates.
+        cat_covs_cf : torch.Tensor, optional
+            Counterfactual categorical covariates. If None, use original covariates.
+        detach_x : bool, optional
+            Whether to detach the input tensor `x`.
+        detach_z : bool, optional
+            Whether to detach the latent representation `z`.
 
+        Returns
+        -------
+        torch.distributions.Distribution
+            The reconstructed gene expression distribution.
         """
         x_ = x
         if detach_x:
@@ -544,26 +552,29 @@ class CellDISECTModule(BaseModuleClass):
         emb = emb.reshape(emb.shape[0], -1)
 
         qz, z = (self.z_encoders_list[idx](torch.hstack((x_, emb))))
-        
+        # TLDR: we encode the original gene expression and covariates of the cell using encoder idx
+        # so z is the latent representation of the original cell, nothing about the counterfactual yet
+
         if detach_z:
             z = z.detach()
 
         if cat_covs_cf is None:
-            cov_indices = list(set(list(range(self.zs_num)))-set([idx-1]))
+            cov_indices = list(set(range(self.zs_num)) - {idx - 1})
             ith_emb = full_embs_ubd[cov_indices, :, :]
             ith_emb = torch.permute(ith_emb, (1, 0, 2))
             ith_emb = self.pert_encoder(ith_emb)
             ith_emb = ith_emb.reshape(ith_emb.shape[0], -1)
         else:
+            # Here's where the counterfactual decoding is happening
             ith_emb = []
             for i, embedding in enumerate(cat_covs_cf.t()):
                 if i == idx-1:
                     continue
                 ith_emb.append(self.covars_embeddings[str(i)](embedding.long()))
-            ith_emb = torch.stack(ith_emb, dim=0)
-            ith_emb = torch.permute(ith_emb, (1, 0, 2))
+            ith_emb = torch.stack(ith_emb, dim=0) # (n_cat_covs-1) x batch_size x emb_dim
+            ith_emb = torch.permute(ith_emb, (1, 0, 2)) # batch_size x (n_cat_covs-1) x emb_dim
             ith_emb = self.pert_encoder(ith_emb)
-            ith_emb = ith_emb.reshape(ith_emb.shape[0], -1)
+            ith_emb = ith_emb.reshape(ith_emb.shape[0], -1) # batch_size x ((n_cat_covs-1) * emb_dim)
 
         x_decoder = self.x_decoders_list[idx]
 
@@ -574,11 +585,22 @@ class CellDISECTModule(BaseModuleClass):
             # *dec_cats
         )
         px_r = torch.exp(self.px_r)
-        cf_difference = (cat_covs == cat_covs_cf).to(device) 
+        cf_difference = (cat_covs == cat_covs_cf).to(device)
+        # px is of shape (batch_size, n_input)
+        # cf_difference[:, idx-1] is a boolean tensor of shape (batch_size,) where True means
+        # the covariate is the same as the original covariate in that cell(hasn't changed)
+        # This is important:
+        # We are currently in enc/dec idx, latent idx is aware of the covariate idx-1
+        # so if covariate idx-1 has been changed in the cf, outputs from dec idx will be incorrect
+        # because they are not getting the new covariate idx-1 value when decoding (decoder i gets covariates except i)
+        # decoder idx is going to keep the original covariate idx-1 value
+        # So we need to filter out the cells where covariate idx-1 has been changed
         px_scale = px_scale[cf_difference[:, idx-1]]
         px_rate = px_rate[cf_difference[:, idx-1]]
         px_dropout = px_dropout[cf_difference[:, idx-1]]
         if px_scale.shape[0] == 0:
+            # if all cells in the batch have their covariate idx-1 changed
+            # there won't be any output from the decoder idx
             return None
 
         if self.gene_likelihood == "zinb":
@@ -631,6 +653,8 @@ class CellDISECTModule(BaseModuleClass):
         emb = emb.reshape(emb.shape[0], -1)
         
         qz, z = (self.z_encoders_list[0](torch.hstack((x_, emb)))) # z0
+        # TLDR: we encode the original gene expression and covariates of the cell using encoder 0
+        # so z is the latent representation of the original cell, nothing about the counterfactual yet
         
         if detach_z:
             z = z.detach()
@@ -642,16 +666,23 @@ class CellDISECTModule(BaseModuleClass):
             ith_emb = self.pert_encoder(ith_emb)
             ith_emb = ith_emb.reshape(ith_emb.shape[0], -1)
         else:
+            # Here's where the counterfactual decoding is happening
             ith_emb = []
             for i, embedding in enumerate(cat_covs_cf.t()):
                 ith_emb.append(self.covars_embeddings[str(i)](embedding.long()))
-            ith_emb = torch.stack(ith_emb, dim=0)
-            ith_emb = torch.permute(ith_emb, (1, 0, 2))
+            # decoder 0 takes all covariates because its latent is unaware of all covariates
+            ith_emb = torch.stack(ith_emb, dim=0) # n_cat_covs x batch_size x emb_dim
+            ith_emb = torch.permute(ith_emb, (1, 0, 2)) # batch_size x n_cat_covs x emb_dim
             ith_emb = self.pert_encoder(ith_emb)
-            ith_emb = ith_emb.reshape(ith_emb.shape[0], -1)    
+            ith_emb = ith_emb.reshape(ith_emb.shape[0], -1) # batch_size x (n_cat_covs * emb_dim)
 
+        # decoder 0
         x_decoder = self.x_decoders_list[0]
 
+        # Note: decoder 0 takes all covariates and is unaware of them in its latent representation
+        # therefore we can change all the covariates here while decoding without any issues
+        # even if all the covariates are changed and we can't use decoders 1, ..., zs_num we can
+        # always use decoder 0 to get the counterfactual gene expression without any issues.
         px_scale, px_r, px_rate, px_dropout = x_decoder(
             self.dispersion,
             torch.hstack((z, ith_emb)),
@@ -683,32 +714,31 @@ class CellDISECTModule(BaseModuleClass):
             detach_z=False):
         """
 
-        performs forward (inference + generative) only on enc/dec 0
-
         Parameters
         ----------
-        idx
-            index of counterfactual covariate [0, ..., self.zs_num-1]
-        x
-        cat_covs
-        detach_x
-        detach_z
+
 
         """
         xs = []
         pxs = []
 
         for i in range(self.zs_num):
+            # Doing counterfactual forward pass for each encoder/decoder 1, 2, ..., zs_num
             px = self.sub_forward_cf(i+1, x, cat_covs, cat_covs_cf, detach_x, detach_z)
             pxs.append(px)
             if px is None:
+                # all cells in the batch have their covariate i changed
+                # no output from decoder i+1
                 continue
             xs.append(px.mean)
 
+        # Doing counterfactual forward pass for encoder/decoder 0
         px = self.sub_forward_cf_z0(x, cat_covs, cat_covs_cf, detach_x, detach_z)
         pxs.append(px)
         xs.append(px.mean)
 
+        # we take the average of the counterfactual gene expression
+        # predictions from all the encoder/decoders to get the final counterfactual gene expression
         x_avg = torch.mean(torch.cat(xs), dim=0)
         return x_avg, pxs
 
@@ -772,26 +802,28 @@ class CellDISECTModule(BaseModuleClass):
             new_cf_method=True, # CHANGE LATER
     ):
         # reconstruction loss X
-
         x = tensors[REGISTRY_KEYS.X_KEY]
 
         reconst_loss_x_list = [-torch.mean(px.log_prob(x).mean(-1)) for px in generative_outputs["px"]]
         reconst_loss_x_dict = {'x_' + str(i): reconst_loss_x_list[i] for i in range(len(reconst_loss_x_list))}
         reconst_loss_x = sum(reconst_loss_x_list) / len(reconst_loss_x_list)
 
-        # reconstruction loss X'
-
+        # reconstruction loss X' (counterfactual)
         cat_covs = tensors[REGISTRY_KEYS.CAT_COVS_KEY]
         batch_size = x.size(dim=0)
 
         reconst_loss_x_cf_list = []
 
         for _ in range(n_cf):
+            # shuffle cell covariates within batch
             idx_shuffled = list(range(batch_size))
 
             # choose a random permutation of X as X_cf
             if 'cluster' in tensors.keys():
-                # if the data is clustered, we shuffle the data within each cluster, meaning each index will be replaced by another index within the same cluster
+                # if the data is clustered, we shuffle the data within each cluster
+                # meaning each index will be replaced by another index within the same cluster
+                # this is to ensure that the counterfactuals are still within the same cluster
+                # in cases such as when the Cell Type is not given as a covariate
                 cluster = tensors['cluster']
                 cluster_unique = torch.unique(cluster)
                 for c in cluster_unique:
@@ -800,27 +832,39 @@ class CellDISECTModule(BaseModuleClass):
                     for i, idx in enumerate(idx_c):
                         idx_shuffled[idx] = idx_c_shuffled[i]
             else:
+                # if the data is not clustered, we shuffle the data randomly
                 random.shuffle(idx_shuffled)
             idx_shuffled = torch.tensor(idx_shuffled).to(device)
 
             x_ = x
+            # x_cf is a random permutation of x based on idx_shuffled
             x_cf = torch.index_select(x, 0, idx_shuffled).to(device)
 
-            cat_cov_ = cat_covs
+            cat_cov_ = cat_covs # batch_size x n_cat_covs
+            # cat_cov_cf is a random permutation of cat_covs based on idx_shuffled
             cat_cov_cf = torch.index_select(cat_covs, 0, idx_shuffled).to(device)
+
             cat_cov_cf_split = torch.split(cat_cov_cf, 1, dim=1)
+            # cat_cov_cf_split is a list of tensors, each tensor is a column of cat_cov_cf
+            # i.e. covariate values for each covariate in the batch
 
             # a random ordering for diffusing through n VAEs
-
             perm = list(range(self.zs_num))
             random.shuffle(perm)
 
             if new_cf_method:
-                cf_difference = (cat_covs == cat_cov_cf).to(device)
-                # Add one column of all True to the end of cf_difference
+                # This is going to tell us which covariates are different between
+                # cat_covs and cat_cov_cf in each row of cat_covs and cat_cov_cf
+                cf_difference = (cat_covs == cat_cov_cf).to(device) # batch_size x n_cat_covs: bool
+                # Add one column of all True to the end of cf_difference: batch_size x (n_cat_covs+1)
                 cf_difference = torch.cat([cf_difference, torch.ones_like(cf_difference[:, 0]).unsqueeze(1)], dim=1).type(torch.bool)
+                # details in sub_forward_cf_avg, sub_forward_cf, and sub_forward_cf_z0
+                # in short, pxs is a list of counterfactually predicted gene expression distributions from all encoder/decoders
                 _, pxs = self.sub_forward_cf_avg(x_, cat_cov_, cat_cov_cf)
 
+                # some dists in pxs might be None if all cells in the batch have their encoder decoder related covariate changed
+                # we only compare the cells in the batch for each enc/dec where the corresponding covariate has not been changed
+                # in enc/dec 0 however, since there is no problem with changing even all the covariates, we can use all the cells (that's why we added a column of all True to cf_difference)
                 log_probs = [px_.log_prob(x_cf[cf_difference[:, i]])
                              for i, px_ in enumerate(pxs) if px_ is not None]
                 probs = [torch.exp(log_prob) for log_prob in log_probs]
