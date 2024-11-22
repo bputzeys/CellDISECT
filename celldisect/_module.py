@@ -27,45 +27,40 @@ class CellDISECTModule(BaseModuleClass):
 
     Parameters
     ----------
-    n_input
-        Number of input genes
-    n_hidden
-        Number of nodes per hidden layer
-    n_latent_shared
-        Dimensionality of the shared latent space (Z_{-s})
-    n_latent_attribute
-        Dimensionality of the latent space for each sensitive attributes (Z_{s_i})
-    n_layers
-        Number of hidden layers used for encoder and decoder NNs
-    n_continuous_cov
-        Number of continuous covarites
-    n_cats_per_cov
-        Number of categories for each extra categorical covariate
-    dropout_rate
-        Dropout rate for neural networks
-    log_variational
-        Log(data+1) prior to encoding for numerical stability. Not normalization.
-    gene_likelihood
-        One of
-        * ``'nb'`` - Negative binomial distribution
-        * ``'zinb'`` - Zero-inflated negative binomial distribution
-        * ``'poisson'`` - Poisson distribution
-    latent_distribution
-        One of
-        * ``'normal'`` - Isotropic normal
-        * ``'ln'`` - Logistic normal with normal params N(0, 1)
-    encode_covariates
-        Whether to concatenate covariates to expression in encoder
-    deeply_inject_covariates
-        Whether to concatenate covariates into output of hidden layers in encoder/decoder. This option
-        only applies when `n_layers` > 1. The covariates are concatenated to the input of subsequent hidden layers.
-    use_batch_norm
-        Whether to use batch norm in layers.
-    use_layer_norm
-        Whether to use layer norm in layers.
-    var_activation
-        Callable used to ensure positivity of the variational distributions' variance.
-        When `None`, defaults to `torch.exp`.
+    n_input : int
+        Number of input genes.
+    n_hidden : Tunable[int], optional
+        Number of nodes per hidden layer, by default 128.
+    n_latent_shared : Tunable[int], optional
+        Dimensionality of the shared latent space (Z_{-s}), by default 10.
+    n_latent_attribute : Tunable[int], optional
+        Dimensionality of the latent space for each sensitive attribute (Z_{s_i}), by default 10.
+    n_layers : Tunable[int], optional
+        Number of hidden layers used for encoder and decoder NNs, by default 1.
+    n_cats_per_cov : Optional[Iterable[int]], optional
+        Number of categories for each extra categorical covariate, by default None.
+    dropout_rate : Tunable[float], optional
+        Dropout rate for neural networks, by default 0.1.
+    log_variational : bool, optional
+        Log(data+1) prior to encoding for numerical stability. Not normalization, by default True.
+    gene_likelihood : Tunable[Literal["zinb", "nb", "poisson"]], optional
+        One of 'nb' (Negative binomial distribution), 'zinb' (Zero-inflated negative binomial distribution), or 'poisson' (Poisson distribution), by default "zinb".
+    latent_distribution : Tunable[Literal["normal", "ln"]], optional
+        One of 'normal' (Isotropic normal) or 'ln' (Logistic normal with normal params N(0, 1)), by default "normal".
+    deeply_inject_covariates : Tunable[bool], optional
+        Whether to concatenate covariates into output of hidden layers in encoder/decoder. This option only applies when `n_layers` > 1. The covariates are concatenated to the input of subsequent hidden layers, by default True.
+    use_batch_norm : Tunable[Literal["encoder", "decoder", "none", "both"]], optional
+        Whether to use batch norm in layers, by default "both".
+    use_layer_norm : Tunable[Literal["encoder", "decoder", "none", "both"]], optional
+        Whether to use layer norm in layers, by default "none".
+    var_activation : Optional[Callable], optional
+        Callable used to ensure positivity of the variational distributions' variance. When `None`, defaults to `torch.exp`, by default None.
+    use_custom_embs : bool, optional
+        Whether to use custom embeddings, by default False.
+    embeddings : Union[torch.Tensor, List[torch.Tensor]], optional
+        Custom embeddings to use if `use_custom_embs` is True, by default None.
+    classifier_weights : Optional[list], optional
+        Weights for the classifiers, by default None.
     """
 
     def __init__(
@@ -96,7 +91,7 @@ class CellDISECTModule(BaseModuleClass):
         self.gene_likelihood = gene_likelihood
         # Automatically deactivate if useless
         self.latent_distribution = latent_distribution
-        
+
         self.px_r = torch.nn.Parameter(torch.randn(n_input))
 
         use_batch_norm_encoder = use_batch_norm == "encoder" or use_batch_norm == "both"
@@ -107,7 +102,7 @@ class CellDISECTModule(BaseModuleClass):
         # Encoders
 
         n_input_encoder = n_input
-        
+
         self.n_cat_list = list([] if n_cats_per_cov is None else n_cats_per_cov)
         if use_custom_embs:
             self.covars_embeddings = nn.ModuleDict(
@@ -125,15 +120,17 @@ class CellDISECTModule(BaseModuleClass):
                     for key, unique_covars in enumerate(self.n_cat_list)
                 }
             )
-            
+
         emb_dim_reducer = nn.Linear(self.covars_embeddings['0'].weight.shape[1], n_latent_shared)
         self.pert_encoder = emb_dim_reducer if use_custom_embs else nn.Identity()
-        
+
         self.zs_num = len(self.n_cat_list)
-        
+
         self.classifier_weights = classifier_weights
         if self.classifier_weights is not None:
-            assert len(self.classifier_weights) == self.zs_num, "classifier_weights should have the same length as the number of categocrical covariates."
+            assert len(
+                self.classifier_weights
+                ) == self.zs_num, "classifier_weights should have the same length as the number of categocrical covariates."
 
         self.z_encoders_list = nn.ModuleList(
             [
@@ -244,8 +241,20 @@ class CellDISECTModule(BaseModuleClass):
     def _get_inference_input(
             self,
             tensors: dict[str, torch.Tensor]
-    ):
+        ) -> dict[str, torch.Tensor]:
+        """
+        Prepares the input for the inference step.
 
+        Parameters
+        ----------
+        tensors : dict[str, torch.Tensor]
+            Dictionary containing the input tensors.
+
+        Returns
+        -------
+        dict[str, torch.Tensor]
+            Dictionary containing the processed input tensors for inference.
+        """
         cat_key = REGISTRY_KEYS.CAT_COVS_KEY
         cat_covs = tensors[cat_key]
 
@@ -261,7 +270,22 @@ class CellDISECTModule(BaseModuleClass):
             self,
             tensors: dict[str, torch.Tensor],
             inference_outputs: dict[str, torch.Tensor],
-    ):
+    ) -> dict[str, torch.Tensor]:
+        """
+        Prepares the input for the generative step.
+
+        Parameters
+        ----------
+        tensors : dict[str, torch.Tensor]
+            Dictionary containing the input tensors.
+        inference_outputs : dict[str, torch.Tensor]
+            Dictionary containing the outputs from the inference step.
+
+        Returns
+        -------
+        dict[str, torch.Tensor]
+            Dictionary containing the processed input tensors for the generative step.
+        """
         input_dict = {
             "z_shared": inference_outputs["z_shared"],
             "zs": inference_outputs["zs"],  # a list of all zs
@@ -276,8 +300,26 @@ class CellDISECTModule(BaseModuleClass):
                   cat_covs,
                   nullify_cat_covs_indices: Optional[List[int]] = None,
                   nullify_shared: Optional[bool] = False,
-                  ):
+                  ) -> dict[str, torch.Tensor]:
+        """
+        Perform the inference step of the model.
 
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input gene expression data.
+        cat_covs : torch.Tensor
+            Categorical covariates.
+        nullify_cat_covs_indices : Optional[List[int]], optional
+            Indices of categorical covariates to nullify, by default None.
+        nullify_shared : Optional[bool], optional
+            Whether to nullify the shared latent space, by default False.
+
+        Returns
+        -------
+        dict[str, torch.Tensor]
+            Dictionary containing the inference outputs.
+        """
         nullify_cat_covs_indices = [] if nullify_cat_covs_indices is None else nullify_cat_covs_indices
 
         x_ = x
@@ -359,7 +401,25 @@ class CellDISECTModule(BaseModuleClass):
             library,
             cat_covs,
             ):
+        """
+        Perform the generative step of the model.
 
+        Parameters
+        ----------
+        z_shared : torch.Tensor
+            Shared latent space tensor.
+        zs : list of torch.Tensor
+            List of latent space tensors for each sensitive attribute.
+        library : torch.Tensor
+            Library size tensor.
+        cat_covs : torch.Tensor
+            Categorical covariates tensor.
+
+        Returns
+        -------
+        dict
+            Dictionary containing the generative outputs.
+        """
         output_dict = {"px": []}
 
         z = [z_shared] + zs
@@ -426,18 +486,25 @@ class CellDISECTModule(BaseModuleClass):
                     detach_x=False,
                     detach_z=False):
         """
-
-        performs forward (inference + generative) only on enc/dec idx
+        Performs forward (inference + generative) only on encoder/decoder idx.
 
         Parameters
         ----------
-        idx
-            index of enc/dec in [1, ..., self.zs_num]
-        x
-        cat_covs
-        detach_x
-        detach_z
+        idx : int
+            Index of encoder/decoder in [1, ..., self.zs_num].
+        x : torch.Tensor
+            Input gene expression data.
+        cat_covs : torch.Tensor
+            Categorical covariates.
+        detach_x : bool, optional
+            Whether to detach the input tensor `x`, by default False.
+        detach_z : bool, optional
+            Whether to detach the latent representation `z`, by default False.
 
+        Returns
+        -------
+        torch.distributions.Distribution
+            The reconstructed gene expression distribution.
         """
         x_ = x
         if detach_x:
@@ -493,6 +560,19 @@ class CellDISECTModule(BaseModuleClass):
         return px
 
     def classification_logits(self, inference_outputs):
+        """
+        Compute classification logits for each sensitive attribute.
+
+        Parameters
+        ----------
+        inference_outputs : dict[str, torch.Tensor]
+            Dictionary containing the outputs from the inference step.
+
+        Returns
+        -------
+        list[torch.Tensor]
+            List of logits for each sensitive attribute.
+        """
         zs = inference_outputs["zs"]
         logits = []
         for i in range(self.zs_num):
@@ -624,16 +704,25 @@ class CellDISECTModule(BaseModuleClass):
                     detach_x=False,
                     detach_z=False):
         """
-
-        performs forward (inference + generative) only on enc/dec 0
+        Performs counterfactual forward (inference + generative) only on encoder/decoder 0.
 
         Parameters
         ----------
-        x
-        cat_covs
-        detach_x
-        detach_z
+        x : torch.Tensor
+            Input gene expression data.
+        cat_covs : torch.Tensor
+            Original categorical covariates.
+        cat_covs_cf : torch.Tensor, optional
+            Counterfactual categorical covariates. If None, use original covariates.
+        detach_x : bool, optional
+            Whether to detach the input tensor `x`, by default False.
+        detach_z : bool, optional
+            Whether to detach the latent representation `z`, by default False.
 
+        Returns
+        -------
+        torch.distributions.Distribution
+            The reconstructed gene expression distribution.
         """
         x_ = x
         if detach_x:
@@ -713,11 +802,27 @@ class CellDISECTModule(BaseModuleClass):
             detach_x=False,
             detach_z=False):
         """
+        Perform counterfactual forward pass for all encoders/decoders and average the results.
 
         Parameters
         ----------
+        x : torch.Tensor
+            Input gene expression data.
+        cat_covs : torch.Tensor
+            Original categorical covariates.
+        cat_covs_cf : torch.Tensor, optional
+            Counterfactual categorical covariates. If None, use original covariates.
+        detach_x : bool, optional
+            Whether to detach the input tensor `x`, by default False.
+        detach_z : bool, optional
+            Whether to detach the latent representation `z`, by default False.
 
-
+        Returns
+        -------
+        torch.Tensor
+            The average counterfactual gene expression.
+        list
+            List of reconstructed gene expression distributions.
         """
         xs = []
         pxs = []
@@ -744,6 +849,21 @@ class CellDISECTModule(BaseModuleClass):
 
 
     def compute_clf_metrics(self, logits, cat_covs):
+        """
+        Compute classification metrics: Cross-Entropy (CE) loss, Accuracy, and F1 score.
+
+        Parameters
+        ----------
+        logits : list[torch.Tensor]
+            List of logits for each sensitive attribute.
+        cat_covs : torch.Tensor
+            Tensor containing the categorical covariates.
+
+        Returns
+        -------
+        tuple
+            A tuple containing the mean CE loss, accuracy, and F1 score.
+        """
         # CE, ACC, F1
         cats = torch.split(cat_covs, 1, dim=1)
         ce_losses = []
@@ -801,6 +921,37 @@ class CellDISECTModule(BaseModuleClass):
             kl_weight: float = 1.0,
             new_cf_method=True, # CHANGE LATER
     ):
+        """
+        Compute the loss for the model.
+
+        Parameters
+        ----------
+        tensors : dict
+            Dictionary containing the input tensors.
+        inference_outputs : dict
+            Dictionary containing the outputs from the inference step.
+        generative_outputs : dict
+            Dictionary containing the outputs from the generative step.
+        recon_weight : Tunable[Union[float, int]]
+            Weight for the reconstruction loss of X.
+        cf_weight : Tunable[Union[float, int]]
+            Weight for the reconstruction loss of X_cf.
+        beta : Tunable[Union[float, int]]
+            Weight for the KL divergence of Zi.
+        clf_weight : Tunable[Union[float, int]]
+            Weight for the Si classifier loss.
+        n_cf : Tunable[int]
+            Number of X_cf reconstructions (X_cf = a random permutation of X).
+        kl_weight : float, optional
+            Weight for the KL divergence, by default 1.0.
+        new_cf_method : bool, optional
+            Whether to use the new counterfactual method, by default True.
+
+        Returns
+        -------
+        dict
+            Dictionary containing the computed losses and metrics.
+        """
         # reconstruction loss X
         x = tensors[REGISTRY_KEYS.X_KEY]
 
