@@ -71,3 +71,10 @@ pip install git+https://github.com/Lotfollahi-lab/CellDISECT
 pip install -U "jax[cuda12_pip]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
 ```
 
+
+How to use CellDISEC
+===
+
+|Description | Link |
+| --- | --- |
+| Counterfactual prediction and DEG analysis | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Lotfollahi-Lab/CellDISECT/blob/main/tutorials/CellDISECT_Counterfactual.ipynb) - [![Open In Github](https://img.shields.io/badge/docs-blue)](https://github.com/Lotfollahi-Lab/CellDISECT/blob/main/tutorials/CellDISECT_Counterfactual.ipynb) |
