@@ -35,7 +35,12 @@ pip install \
 pip install rapids-singlecell
 ```
 
-- Install the latest version of CellDISECT
+- Install CellDISECT
+You can either install the stable version published on pypi using pip:
+```
+pip install celldisect
+```
+Or you can install the latest developed version directly from our github:
 ```
 pip install git+https://github.com/Lotfollahi-lab/CellDISECT
 ```
