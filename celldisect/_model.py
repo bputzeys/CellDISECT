@@ -8,6 +8,7 @@ from anndata import AnnData
 import anndata as ad
 import scanpy as sc
 import random
+from scipy import sparse
 
 from sklearn.utils.class_weight import compute_class_weight
 
@@ -524,8 +525,14 @@ class CellDISECT(
         px_cf_mean_tensor = torch.tensor(px_cf_mean_tensor.X)
 
         # Get true and control counts
-        true_x_count = torch.tensor(true_adata.X)
-        cf_x_count = torch.tensor(source_adata.X)
+        if sparse.issparse(true_adata.X):
+            true_x_count = torch.tensor(true_adata.X.toarray())
+        else:
+            true_x_count = torch.tensor(true_adata.X)
+        if sparse.issparse(source_adata.X):
+            cf_x_count = torch.tensor(source_adata.X.toarray())
+        else:
+            cf_x_count = torch.tensor(source_adata.X)
 
         x_true = true_x_count
         x_pred = px_cf_mean_tensor
