@@ -46,43 +46,44 @@ class CellDISECT(
     BaseModelClass,
     TunableMixin
 ):
-    """
-    CellDISECT model for single-cell RNA sequencing data analysis.
+    """CellDISECT model for single-cell RNA sequencing data analysis.
 
     Parameters
     ----------
-    adata : AnnData
+    adata
         AnnData object that has been registered via :meth:`~scvi.model.SCVI.setup_anndata`.
-    n_hidden : int
+    n_hidden
         Number of nodes per hidden layer.
-    n_latent_shared : int
+    n_latent_shared
         Dimensionality of the shared latent space.
-    n_latent_attribute : int
+    n_latent_attribute
         Dimensionality of the latent space for each sensitive attribute.
-    n_layers : int
+    n_layers
         Number of hidden layers used for encoder and decoder neural networks.
-    dropout_rate : float
+    dropout_rate
         Dropout rate for neural networks.
-    gene_likelihood : str
+    gene_likelihood
         One of:
+
         * ``'nb'`` - Negative binomial distribution
         * ``'zinb'`` - Zero-inflated negative binomial distribution
         * ``'poisson'`` - Poisson distribution
-    latent_distribution : str
+    latent_distribution
         One of:
+
         * ``'normal'`` - Normal distribution
         * ``'ln'`` - Logistic normal distribution (Normal(0, I) transformed by softmax)
-    split_key : str, optional
+    split_key
         Key in `adata.obs` to split the data into training, validation, and test sets.
-    train_split : Union[str, List[str]], optional
+    train_split
         Values in `split_key` to be used for training.
-    valid_split : Union[str, List[str]], optional
+    valid_split
         Values in `split_key` to be used for validation.
-    test_split : Union[str, List[str]], optional
+    test_split
         Values in `split_key` to be used for testing.
-    weighted_classifier : bool, optional
+    weighted_classifier
         Whether to use weighted classifiers for categorical covariates.
-    **model_kwargs : dict
+    **model_kwargs
         Additional keyword arguments for the model.
     """
 
@@ -383,8 +384,7 @@ class CellDISECT(
             n_samples_from_source: Optional[int] = None,
             seed: Optional[int] = 0
     ):
-        """
-        Predicts counterfactuals for a given subset of data.
+        """Predicts counterfactuals for a given subset of data.
 
         This function estimates the counterfactual outcomes for a subset of data based on specified changes in covariate values.
 
@@ -401,9 +401,11 @@ class CellDISECT(
         cats : list[str]
             Names of the categorical covariates.
         n_samples_from_source : Optional[int], optional
-            Number of samples to take from the source data to predict the counterfactuals. If None, all samples from the source data are used. Defaults to None.
+            Number of samples to take from the source data to predict the counterfactuals.
+            If None, all samples from the source data are used. Defaults to None.
         seed : Optional[int], optional
-            Random seed for reproducibility. Defaults to 0. Only used if `n_samples_from_source` is not None.
+            Random seed for reproducibility. Defaults to 0.
+            Only used if `n_samples_from_source` is not None.
 
         Returns
         -------
@@ -412,7 +414,8 @@ class CellDISECT(
 
         Examples
         --------
-        Single covariate change:
+        Single covariate change::
+
             cats = ['cell_type', 'condition']
             cell_type_to_check = ['CD4 T',]
             cov_names = ['condition']
@@ -428,10 +431,10 @@ class CellDISECT(
                 n_samples_from_source=n_samples_from_source,
             )
 
-        Multiple covariate change:
+        Multiple covariate change::
+
             cats = ['tissue', 'Sample ID', 'sex', 'Age_bin', 'CoarseCellType']
             cell_type_to_check = 'Epithelial cell (luminal)'
-
             cov_names = ['sex', 'tissue']
             cov_values = ['female', 'breast']
             cov_values_cf = ['male', 'prostate gland']
