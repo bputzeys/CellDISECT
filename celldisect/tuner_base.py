@@ -131,7 +131,7 @@ class AutotuneExperiment:
         sub_sample: float | None = None,
         setup_anndata_kwargs: dict[str, Any] = {},
         use_wandb: bool = False,
-        wandb_name: str = "dis2p_tune",
+        wandb_name: str = "celldisect_tune",
         plan_kwargs_keys: list[str] = [],
         evaluation_func: Callable = None,
     ) -> None:
