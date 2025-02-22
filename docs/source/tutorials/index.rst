@@ -9,3 +9,10 @@ Here you can find tutorials and examples for using CellDISECT.
    :caption: Training CellDISECT and making counterfactual predictions on the Kang dataset
 
    CellDISECT_Counterfactual
+
+.. toctree::
+   :maxdepth: 1
+   :caption: Exploring combinations of CellDISECT latent spaces for erythroid subset inference (Z_0 + Z_Organ in one latent space)
+
+   Erythroid_subset_inference
+
