@@ -1,0 +1,44 @@
+{% extends "!layout.html" %}
+
+{%- block extrahead %}
+{{ super() }}
+    <meta name="description" content="CellDISECT: A comprehensive tool for single-cell data analysis and integration. Documentation includes installation guides, tutorials, and API reference.">
+    <meta name="keywords" content="CellDISECT, single-cell analysis, bioinformatics, RNA-seq, data integration">
+    
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="{{ pageurl }}">
+    <meta property="og:title" content="{% if title %}{{ title }} - {% endif %}{{ project }} Documentation">
+    <meta property="og:description" content="CellDISECT documentation: {% if meta and meta.description %}{{ meta.description }}{% else %}Comprehensive documentation for single-cell data analysis and integration{% endif %}">
+    {% if theme_logo %}
+    <meta property="og:image" content="{{ pathto('_static/' + theme_logo, 1) }}">
+    {% endif %}
+    
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="{% if title %}{{ title }} - {% endif %}{{ project }} Documentation">
+    <meta name="twitter:description" content="CellDISECT documentation: {% if meta and meta.description %}{{ meta.description }}{% else %}Comprehensive documentation for single-cell data analysis and integration{% endif %}">
+    {% if theme_logo %}
+    <meta name="twitter:image" content="{{ pathto('_static/' + theme_logo, 1) }}">
+    {% endif %}
+{% endblock %}
+
+{%- block footer %}
+{{ super() }}
+    <!-- Add structured data for better SEO -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "CellDISECT",
+        "applicationCategory": "Scientific Software",
+        "operatingSystem": "Cross-platform",
+        "description": "A comprehensive tool for single-cell data analysis and integration",
+        "url": "{{ pathto('', 1) }}",
+        "author": {
+            "@type": "Organization",
+            "name": "{{ copyright }}"
+        }
+    }
+    </script>
+{% endblock %} 

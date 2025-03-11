@@ -4,7 +4,7 @@ Utilities
 .. currentmodule:: celldisect
 
 Utility Functions
-----------------
+------------------
 
 .. automodule:: celldisect.utils
    :members:

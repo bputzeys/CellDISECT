@@ -2,15 +2,26 @@
 Welcome to CellDISECT's documentation!
 =======================================
 
+.. image:: _static/images/CellDISECT_Logo_whitebg.png
+   :align: center
+   :width: 800px
+
 **CellDISECT** (Cell DISentangled Experts for Covariate counTerfactuals) is a causal generative model designed to disentangle known covariate variations from unknown ones at test time while simultaneously learning to make counterfactual predictions.
+
+.. image:: _static/images/celldisect_illustration.png
+   :align: center
+   :width: 700px
 
 .. toctree::
    :maxdepth: 2
    :caption: Contents
 
    installation
+   examples
    tutorials/index
    api/index
+   changelog
+   contributing
    references
 
 Installation

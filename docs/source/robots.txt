@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+Sitemap: https://celldisect.readthedocs.io/sitemap.xml
+
+# Optimize crawling
+Disallow: /_sources/
+Disallow: /_static/
+Disallow: /_images/
+Disallow: /_downloads/
+Disallow: /_modules/ 

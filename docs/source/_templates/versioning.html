@@ -1,0 +1,25 @@
+{% if versions %}
+<div class="rst-versions" data-toggle="rst-versions" role="note" aria-label="versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    <span class="fa fa-book"> CellDISECT </span>
+    v: {{ current_version.name }}
+    <span class="fa fa-caret-down"></span>
+  </span>
+  <div class="rst-other-versions">
+    <dl>
+      <dt>{{ _('Versions') }}</dt>
+      {% for item in versions %}
+        {% if item.name != current_version.name %}
+          <dd><a href="{{ item.url }}">{{ item.name }}</a></dd>
+        {% endif %}
+      {% endfor %}
+    </dl>
+    <dl>
+      <dt>{{ _('On GitHub') }}</dt>
+        <dd>
+          <a href="https://github.com/Lotfollahi-lab/CellDISECT/tree/{{ current_version.name }}">{{ _('View') }}</a>
+        </dd>
+    </dl>
+  </div>
+</div>
+{% endif %} 

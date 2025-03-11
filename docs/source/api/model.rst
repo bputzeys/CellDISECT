@@ -13,22 +13,28 @@ Model Class
    CellDISECT
 
 Module Components
-----------------
+------------------
+
+.. module:: celldisect._model
 
 .. automodule:: celldisect._model
    :members:
    :undoc-members:
    :show-inheritance:
-   :no-index:
+   :noindex:
+
+.. module:: celldisect._module
 
 .. automodule:: celldisect._module
    :members:
    :undoc-members:
    :show-inheritance:
-   :no-index:
+   :noindex:
+
+.. module:: celldisect.trainingplan
 
 .. automodule:: celldisect.trainingplan
    :members:
    :undoc-members:
    :show-inheritance:
-   :no-index: 
+   :noindex: 
