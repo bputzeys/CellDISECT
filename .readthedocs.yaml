@@ -7,9 +7,30 @@ build:
 
 sphinx:
   configuration: docs/source/conf.py
+  builder: html
+  fail_on_warning: false
 
 python:
   install:
     - requirements: docs/requirements.txt
     - method: pip
-      path: . 
+      path: .
+
+# Version configuration
+formats:
+  - pdf
+  - epub
+
+# Search configuration
+search:
+  ranking:
+    api/index: 5
+    examples: 4
+    tutorials/index: 3
+    installation: 2
+    index: 1
+
+# Version settings
+versions:
+  latest: main
+  stable: v0.1.1 
