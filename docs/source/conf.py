@@ -235,8 +235,7 @@ latex_documents = [
      'celldisect.tex',             # Target name
      'CellDISECT Documentation',   # Title
      author,                       # Author
-     'manual',                     # Document class
-     True)                         # Omit top level section
+     'manual')                     # Document class
 ]
 
 latex_elements = {
@@ -249,7 +248,22 @@ latex_elements = {
         \usepackage{amssymb}
         \usepackage{graphicx}
     ''',
+    'extraclassoptions': 'openany,oneside',
+    'babel': '\\usepackage[english]{babel}',
+    'maketitle': '\\maketitle',
+    'tableofcontents': '\\tableofcontents',
+    'fncychap': '',
+    'printindex': ''
 }
+
+# Completely disable other builders
+epub_build = False
+html_use_index = False
+latex_domain_indices = False
+latex_use_modindex = False
+latex_use_parts = False
+latex_show_urls = 'no'
+latex_show_pagerefs = False
 
 # Disable other builders that might generate additional PDFs
 epub_build = False 
