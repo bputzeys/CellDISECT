@@ -1,6 +1,0 @@
-$pdflatex = 'pdflatex %O %S';
-$pdf_mode = 1;
-$out_dir = '_build/latex';
-$clean_ext = 'aux fdb_latexmk fls log nav out snm toc vrb';
-@default_files = ('celldisect.tex');
-$pdf_previewer = 'none'; 

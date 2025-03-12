@@ -229,6 +229,11 @@ images_config = {
 pygments_style = 'sphinx'
 highlight_language = 'python3'
 
+# Disable all PDF and ePub builders
+latex_documents = None
+latex_elements = None
+epub_build = False
+
 # LaTeX configuration for PDF output
 latex_documents = [
     (master_doc,                    # Source start file
@@ -257,13 +262,9 @@ latex_elements = {
 }
 
 # Completely disable other builders
-epub_build = False
 html_use_index = False
 latex_domain_indices = False
 latex_use_modindex = False
 latex_use_parts = False
 latex_show_urls = 'no'
-latex_show_pagerefs = False
-
-# Disable other builders that might generate additional PDFs
-epub_build = False 
+latex_show_pagerefs = False 
