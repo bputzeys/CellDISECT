@@ -33,4 +33,3 @@ search:
 # Version settings
 versions:
   latest: main
-  stable: v0.1.1 

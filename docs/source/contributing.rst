@@ -27,10 +27,10 @@ Pull Request Process
 2. Update the docs/source/changelog.rst with a note describing your changes.
 3. The PR will be merged once you have the sign-off of at least one other developer.
 
-Any contributions you make will be under the MIT Software License
+Any contributions you make will be under the BSD 3-Clause License
 ------------------------------------------------------------------
 
-In short, when you submit code changes, your submissions are understood to be under the same `MIT License <http://choosealicense.com/licenses/mit/>`_ that covers the project. Feel free to contact the maintainers if that's a concern.
+In short, when you submit code changes, your submissions are understood to be under the same `BSD 3-Clause License <https://opensource.org/licenses/BSD-3-Clause>`_ that covers the project. Feel free to contact the maintainers if that's a concern.
 
 Report bugs using GitHub's `issue tracker <https://github.com/Lotfollahi-lab/CellDISECT/issues>`_
 ----------------------------------------------------------------------------------------------------------
@@ -83,4 +83,4 @@ Here's how to set up CellDISECT for local development:
 License
 -------
 
-By contributing, you agree that your contributions will be licensed under its MIT License. 
+By contributing, you agree that your contributions will be licensed under its BSD 3-Clause License. 
