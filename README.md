@@ -12,9 +12,9 @@
 
 ## 🧬 Overview
 
-CellDISECT (Cell DISentangled Experts for Covariate counTerfactuals) is a powerful causal generative model that revolutionizes single-cell analysis by:
+CellDISECT (Cell DISentangled Experts for Covariate counTerfactuals) is a powerful causal generative model that enhances single-cell analysis by:
 
-- 🔍 **Disentangling Variations**: Separates known covariate variations from unknown ones at test time
+- 🔍 **Disentangling Variations**: Separates covariate variations at test time
 - 🧪 **Counterfactual Predictions**: Learns to make accurate counterfactual predictions
 - 🎯 **Flexible Fairness**: Achieves flexible fairness through expert models for each latent space
 - 🔬 **Enhanced Discovery**: Captures both covariate-specific information and novel biological insights
