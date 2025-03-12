@@ -215,7 +215,7 @@ mathjax3_config = {
 }
 
 # Sphinx Design configuration
-sd_fontawesome_latex = True
+sd_fontawesome_latex = False
 
 # Accessibility and image settings
 suppress_warnings = ['image.nonlocal_uri']
@@ -229,42 +229,5 @@ images_config = {
 pygments_style = 'sphinx'
 highlight_language = 'python3'
 
-# Disable all PDF and ePub builders
-latex_documents = None
-latex_elements = None
-epub_build = False
-
-# LaTeX configuration for PDF output
-latex_documents = [
-    (master_doc,                    # Source start file
-     'celldisect.tex',             # Target name
-     'CellDISECT Documentation',   # Title
-     author,                       # Author
-     'manual')                     # Document class
-]
-
-latex_elements = {
-    'papersize': 'a4paper',
-    'pointsize': '11pt',
-    'figure_align': 'htbp',
-    'preamble': r'''
-        \usepackage{amsmath}
-        \usepackage{amsfonts}
-        \usepackage{amssymb}
-        \usepackage{graphicx}
-    ''',
-    'extraclassoptions': 'openany,oneside',
-    'babel': '\\usepackage[english]{babel}',
-    'maketitle': '\\maketitle',
-    'tableofcontents': '\\tableofcontents',
-    'fncychap': '',
-    'printindex': ''
-}
-
-# Completely disable other builders
-html_use_index = False
-latex_domain_indices = False
-latex_use_modindex = False
-latex_use_parts = False
-latex_show_urls = 'no'
-latex_show_pagerefs = False 
+# Disable PDF and ePub builders
+epub_build = False 
