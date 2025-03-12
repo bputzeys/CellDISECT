@@ -227,4 +227,29 @@ images_config = {
 
 # Better code block settings for accessibility
 pygments_style = 'sphinx'
-highlight_language = 'python3' 
+highlight_language = 'python3'
+
+# LaTeX configuration for PDF output
+latex_documents = [
+    (master_doc,                    # Source start file
+     'celldisect.tex',             # Target name
+     'CellDISECT Documentation',   # Title
+     author,                       # Author
+     'manual',                     # Document class
+     True)                         # Omit top level section
+]
+
+latex_elements = {
+    'papersize': 'a4paper',
+    'pointsize': '11pt',
+    'figure_align': 'htbp',
+    'preamble': r'''
+        \usepackage{amsmath}
+        \usepackage{amsfonts}
+        \usepackage{amssymb}
+        \usepackage{graphicx}
+    ''',
+}
+
+# Disable other builders that might generate additional PDFs
+epub_build = False 
