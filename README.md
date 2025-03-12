@@ -87,7 +87,7 @@ pip install -U "jax[cuda12_pip]" -f https://storage.googleapis.com/jax-releases/
 
 | Tutorial | Description | Links |
 |----------|-------------|-------|
-| **Basic Training** | Learn how to train CellDISECT and make counterfactual predictions using the Kang dataset | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Lotfollahi-Lab/CellDISECT/blob/main/tutorials/CellDISECT_Counterfactual.ipynb) [![Documentation](https://img.shields.io/badge/docs-blue)](https://celldisect.readthedocs.io/en/latest/tutorials/CellDISECT_Counterfactual.html) |
+| **Basic Training** | Learn how to train CellDISECT and make counterfactual predictions using the Kang dataset | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Lotfollahi-Lab/CellDISECT/blob/main/docs/source/tutorials/CellDISECT_Counterfactual.ipynb) [![Documentation](https://img.shields.io/badge/docs-blue)](https://celldisect.readthedocs.io/en/latest/tutorials/CellDISECT_Counterfactual.html) |
 
 ### Advanced Applications
 
