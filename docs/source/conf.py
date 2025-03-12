@@ -175,20 +175,6 @@ nbsphinx_allow_errors = True
 nbsphinx_kernel_name = 'python3'
 nbsphinx_prompt_width = 0
 
-# Notebook style settings
-nbsphinx_prolog = """
-{% set docname = env.doc2path(env.docname, base='docs/source/tutorials') %}
-
-.. note::
-
-   This page was generated from `{{ docname }}`__.
-   Interactive online version: |Binder|
-
-__ https://github.com/YourUsername/CellDISECT/blob/main/{{ docname }}
-
-.. |Binder| image:: https://mybinder.org/badge_logo.svg
-   :target: https://mybinder.org/v2/gh/YourUsername/CellDISECT/main?filepath={{ docname }}
-"""
 
 # Add notebooks to the patterns of files to copy
 html_extra_path = ['robots.txt']
