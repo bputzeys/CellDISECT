@@ -172,7 +172,7 @@ class CellDISECTTrainingPlan(TrainingPlan):
         ensemble_method_cf : bool, optional
             Whether to use the new counterfactual method. Default is True.
         kappa_optimizer2 : bool, optional
-            Whether to use the second kappa optimizer. Default is True.
+            Whether to use the kappa weight in optimizer 2. Default is True.
         **loss_kwargs
             Keyword args to pass to the loss method of the `module`.
             `kl_weight` should not be passed here and is handled automatically.
