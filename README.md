@@ -10,6 +10,8 @@
 
 </div>
 
+> **ℹ️ Beta Version Available**: A beta version with compatibility for Google Colab and newer versions of torch and scvi-tools is available on the [`beta-colab`](https://github.com/Lotfollahi-Lab/CellDISECT/tree/beta-colab) branch. Install it with `pip install celldisect==0.2.0b1`.
+
 ## 🧬 Overview
 
 CellDISECT (Cell DISentangled Experts for Covariate counTerfactuals) is a powerful causal generative model that enhances single-cell analysis by:

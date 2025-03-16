@@ -25,6 +25,12 @@ You can install the stable version using pip:
 
    pip install celldisect
 
+Install the beta version with Google Colab and newer dependency support:
+
+.. code-block:: bash
+
+   pip install celldisect==0.2.0b1
+
 Or install the latest development version from GitHub:
 
 .. code-block:: bash
