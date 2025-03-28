@@ -6,6 +6,29 @@ Welcome to CellDISECT's documentation!
    :align: center
    :width: 800px
 
+.. raw:: html
+
+   <div style="text-align: center; margin: 20px 0;">
+     <a href="https://pypi.org/project/celldisect" target="_blank">
+       <img src="https://img.shields.io/pypi/v/celldisect?label=pypi%20package&color=green" alt="PyPI Version">
+     </a>
+     <a href="https://github.com/Lotfollahi-Lab/CellDISECT/blob/main/LICENSE" target="_blank">
+       <img src="https://img.shields.io/badge/License-BSD%203--Clause-blue" alt="License">
+     </a>
+     <a href="https://github.com/Lotfollahi-Lab/CellDISECT/stargazers" target="_blank">
+       <img src="https://img.shields.io/github/stars/Lotfollahi-Lab/CellDISECT?logo=github" alt="GitHub Stars">
+     </a>
+     <a href="https://pepy.tech/projects/celldisect">
+       <img src="https://static.pepy.tech/badge/celldisect" alt="PyPI Downloads">
+      </a>
+   </div>
+
+   <div style="text-align: center; margin: 20px 0;">
+     <a href="https://github.com/Lotfollahi-Lab/CellDISECT" target="_blank">
+       <img src="https://img.shields.io/badge/GitHub-CellDISECT-blue?style=for-the-badge&logo=github" alt="GitHub Repository">
+     </a>
+   </div>
+
 .. note::
    **Beta Version Available**: A beta version (0.2.0b1) with compatibility for Google Colab and newer versions of torch and scvi-tools is available on the `beta-colab branch <https://github.com/Lotfollahi-Lab/CellDISECT/tree/beta-colab>`_. Install it with ``pip install celldisect==0.2.0b1``.
 
