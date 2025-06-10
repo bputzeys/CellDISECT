@@ -2,7 +2,7 @@ cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
 type: software
 title: "CellDISECT: Cell DISentangled Experts for Covariate counTerfactuals"
-version: 0.1.3
+version: 0.1.4
 doi: 10.1101/2025.06.03.657578
 date-released: 2025-06-06
 url: "https://github.com/Lotfollahi-lab/CellDISECT"

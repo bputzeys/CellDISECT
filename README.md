@@ -1,4 +1,4 @@
-# <img src="https://github.com/Lotfollahi-lab/celldisect/blob/main/media/CellDISECT_Logo_whitebg.png" width="1000" alt="celldisect-logo">
+# <img src="https://raw.githubusercontent.com/Lotfollahi-lab/CellDISECT/main/media/CellDISECT_Logo_whitebg.png" width="1000" alt="celldisect-logo">
 
 <div align="center">
 
@@ -23,7 +23,7 @@ CellDISECT (Cell DISentangled Experts for Covariate counTerfactuals) is a powerf
 - 🔬 **Enhanced Discovery**: Captures both covariate-specific information and novel biological insights
 
 <p align="center">
-  <img src="https://github.com/Lotfollahi-lab/celldisect/blob/main/media/celldisect_illustration.png" width="750">
+  <img src="https://raw.githubusercontent.com/Lotfollahi-lab/CellDISECT/main/media/celldisect_illustration.png" width="750">
 </p>
 
 ## 📚 Documentation
