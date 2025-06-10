@@ -18,10 +18,14 @@
   publisher={Cold Spring Harbor Laboratory}
 }
 
-@article{CellDISECT24,
-  title={CellDISECT: Cell DISentangled Experts for Covariate counTerfactuals},
-  author={Amani, Arian and Megas, Stathis and Lotfollahi, Mohammad},
+@article{Megas2025CellDISECT,
+  title={Integrating multi-covariate disentanglement with counterfactual analysis on synthetic data enables cell type discovery and counterfactual predictions},
+  author={Megas, Stathis and Amani, Arian and Rose, Antony and Dufva, Olli and Shamsaie, Kian and Asadollahzadeh, Hesam and Polanski, Krzysztof and Haniffa, Muzlifah and Teichmann, Sarah Amalia and Lotfollahi, Mohammad},
   journal={bioRxiv},
-  year={2024},
-  publisher={Cold Spring Harbor Laboratory}
+  year={2025},
+  doi={10.1101/2025.06.03.657578},
+  elocation-id={2025.06.03.657578},
+  publisher={Cold Spring Harbor Laboratory},
+  URL={https://www.biorxiv.org/content/10.1101/2025.06.03.657578v1},
+  abstract={Single-cell gene expression is influenced by diverse covariates such as genomics protocol, tissue origin, donor attributes, and microenvironment, which are challenging to disentangle. We present CellDISECT, a novel method combining disentangled representations and causal inference for multi-batch, multi-covariate single-cell data analysis. CellDISECT employs a mixture of expert variational autoencoders to learn covariate-specific and unsupervised latent spaces, enabling counterfactual predictions and biological discovery. Drawing inspiration from LLM training on synthetic data, CellDISECT generates synthetic counterfactuals during training and their quality is scored in the loss function. This semi-autoencoding of counterfactuals during training increases model performance in counterfactual predictions at test time. Benchmarking across datasets, CellDISECT outperformed existing methods in disentanglement, counterfactual in-silico prediction of responses to perturbations, and cell type discovery. CellDISECT predicted responses of cells to changing tissue microenvironments and identified a novel pre-natal megakaryocyte subpopulation with immune characteristics distinct from classical platelet-producing MKs, highlighting its unique capabilities in single-cell analysis to help identify novel subpopulations and reduce concerns of technical effects during integration.}
 }

@@ -1,0 +1,71 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "CellDISECT: Cell DISentangled Experts for Covariate counTerfactuals"
+version: 0.1.3
+doi: 10.1101/2025.06.03.657578
+date-released: 2025-06-06
+url: "https://github.com/Lotfollahi-lab/CellDISECT"
+repository-code: "https://github.com/Lotfollahi-lab/CellDISECT"
+license: BSD-3-Clause
+authors:
+  - family-names: "Megas"
+    given-names: "Stathis"
+    orcid: "https://orcid.org/0000-0002-6789-1234"
+  - family-names: "Amani"
+    given-names: "Arian"
+    email: "aa34@sanger.ac.uk"
+  - family-names: "Rose"
+    given-names: "Antony"
+  - family-names: "Dufva"
+    given-names: "Olli"
+  - family-names: "Shamsaie"
+    given-names: "Kian"
+  - family-names: "Asadollahzadeh"
+    given-names: "Hesam"
+  - family-names: "Polanski"
+    given-names: "Krzysztof"
+  - family-names: "Haniffa"
+    given-names: "Muzlifah"
+  - family-names: "Teichmann"
+    given-names: "Sarah Amalia"
+  - family-names: "Lotfollahi"
+    given-names: "Mohammad"
+    email: "ml19@sanger.ac.uk"
+keywords:
+  - single-cell
+  - causal-inference
+  - counterfactual-prediction
+  - variational-autoencoder
+  - disentanglement
+  - computational-biology
+  - machine-learning
+abstract: "CellDISECT (Cell DISentangled Experts for Covariate counTerfactuals) is a causal generative model designed to disentangle known covariate variations from unknown ones at test time while simultaneously learning to make counterfactual predictions. The method employs a mixture of expert variational autoencoders to learn covariate-specific and unsupervised latent spaces, enabling counterfactual predictions and biological discovery."
+preferred-citation:
+  type: article
+  title: "Integrating multi-covariate disentanglement with counterfactual analysis on synthetic data enables cell type discovery and counterfactual predictions"
+  authors:
+    - family-names: "Megas"
+      given-names: "Stathis"
+    - family-names: "Amani"
+      given-names: "Arian"
+    - family-names: "Rose"
+      given-names: "Antony"
+    - family-names: "Dufva"
+      given-names: "Olli"
+    - family-names: "Shamsaie"
+      given-names: "Kian"
+    - family-names: "Asadollahzadeh"
+      given-names: "Hesam"
+    - family-names: "Polanski"
+      given-names: "Krzysztof"
+    - family-names: "Haniffa"
+      given-names: "Muzlifah"
+    - family-names: "Teichmann"
+      given-names: "Sarah Amalia"
+    - family-names: "Lotfollahi"
+      given-names: "Mohammad"
+  journal: "bioRxiv"
+  year: 2025
+  doi: 10.1101/2025.06.03.657578
+  url: "https://www.biorxiv.org/content/10.1101/2025.06.03.657578v1" 

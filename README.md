@@ -7,6 +7,7 @@
 [![License](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](https://github.com/Lotfollahi-lab/celldisect/blob/main/LICENSE)
 [![Stars](https://img.shields.io/github/stars/Lotfollahi-lab/celldisect?logo=GitHub&color=yellow)](https://github.com/Lotfollahi-lab/celldisect/stargazers)
 [![Downloads](https://static.pepy.tech/badge/celldisect)](https://pepy.tech/project/celldisect)
+[![bioRxiv](https://img.shields.io/badge/bioRxiv-2025.06.03.657578-red.svg)](https://www.biorxiv.org/content/10.1101/2025.06.03.657578v1)
 
 </div>
 
@@ -116,14 +117,21 @@ For questions and support:
 - Open an [issue](https://github.com/Lotfollahi-lab/celldisect/issues)
 - Visit our [documentation](https://celldisect.readthedocs.io/)
 
-<!-- ## 📝 Citation -->
+## 📝 Citation
 
-<!-- If you use CellDISECT in your research, please cite our paper:
+If you use CellDISECT in your research, please cite our paper:
+
+**Megas, S., Amani, A., Rose, A., Dufva, O., Shamsaie, K., Asadollahzadeh, H., Polanski, K., Haniffa, M., Teichmann, S. A., & Lotfollahi, M.** (2025). Integrating multi-covariate disentanglement with counterfactual analysis on synthetic data enables cell type discovery and counterfactual predictions. *bioRxiv*. https://doi.org/10.1101/2025.06.03.657578
+
 ```bibtex
-@article{your-paper-citation,
-    title={CellDISECT: Cell DISentangled Experts for Covariate counTerfactuals},
-    author={Author Names},
-    journal={Journal Name},
-    year={2024}
-} -->
-<!-- ``` -->
+@article{Megas2025CellDISECT,
+    title={Integrating multi-covariate disentanglement with counterfactual analysis on synthetic data enables cell type discovery and counterfactual predictions},
+    author={Megas, Stathis and Amani, Arian and Rose, Antony and Dufva, Olli and Shamsaie, Kian and Asadollahzadeh, Hesam and Polanski, Krzysztof and Haniffa, Muzlifah and Teichmann, Sarah Amalia and Lotfollahi, Mohammad},
+    journal={bioRxiv},
+    year={2025},
+    doi={10.1101/2025.06.03.657578},
+    elocation-id={2025.06.03.657578},
+    publisher={Cold Spring Harbor Laboratory},
+    URL={https://www.biorxiv.org/content/10.1101/2025.06.03.657578v1}
+}
+```

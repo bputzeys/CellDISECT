@@ -21,6 +21,9 @@ Welcome to CellDISECT's documentation!
      <a href="https://pepy.tech/projects/celldisect">
        <img src="https://static.pepy.tech/badge/celldisect" alt="PyPI Downloads">
       </a>
+     <a href="https://www.biorxiv.org/content/10.1101/2025.06.03.657578v1" target="_blank">
+       <img src="https://img.shields.io/badge/bioRxiv-2025.06.03.657578-red.svg" alt="bioRxiv Preprint">
+     </a>
    </div>
 
    <div style="text-align: center; margin: 20px 0;">
