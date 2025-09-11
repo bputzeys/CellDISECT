@@ -8,47 +8,27 @@ readme = "README.md"
 homepage = "https://github.com/Lotfollahi-lab/CellDISECT"
 
 [tool.poetry.dependencies]
-python = ">=3.9, <3.11"
-llvmlite = "^0.42"
-anndata = ">=0.10.8, <0.10.9"
-scvi-tools = ">=0.20.3,<1.0.0"
+numba = "==0.60.0"
+python = ">=3.9"
+llvmlite = ">=0.43.0dev0"
+anndata = "==0.10.8"
+scvi-tools = "==0.20.3"
 importlib-metadata = "*"
 scanpy = "*"
-torch = { version = ">=2.1.0, <2.3.0"}
+torch = { version = ">=2.1.0"}
 adjustText = "*"
-numpy = '>=1.26.3, <1.27.0'
+numpy = '>=1.26.3'
 seaborn = "*"
 gdown = "*"
-jax = ">=0.4.16, <0.4.24"
-jaxlib = ">=0.4.16, <0.4.24"
-lightning = ">=2.2.0, <2.3.0"
-scib-metrics = ">=0.5.1, <0.6.0"
-scib = ">=1.1.5, <1.2.0"
+jax = ">=0.7.1"
+jaxlib = ">=0.7.1"
+lightning = ">=2.2.0"
+scib-metrics = "==0.5.7"
+scib = "==1.1.7"
 ipykernel = "*"
-ray = { version = ">=2.9.0, <2.10.0", extras = ["data", "train", "tune", "serve"] }
-scipy = ">=1.12.0, <1.13.0"
-typing_extensions = ">=4.5, <4.6"
-
-# Optional dependencies
-pytest = "*"
-pytest-cov = "*"
-black = "*"
-flake8 = "*"
-jupyter = "*"
-nbformat = "*"
-nbconvert = "*"
-sphinx = "*"
-scanpydoc = "*"
-nbsphinx = "*"
-nbsphinx-link = "*"
-ipython = "*"
-toml = "*"
-pydata-sphinx-theme = "*"
-sphinx-autodoc-typehints = "*"
-sphinx_gallery = "*"
-sphinx-rtd-theme = "*"
-wandb = "*"
-
+ray = { version = ">=2.49.1", extras = ["data", "train", "tune", "serve"] }
+scipy = "==1.16.2"
+typing_extensions = ">=4.5"
 
 [tool.poetry.extras]
 docs = ["scanpy", "sphinx", "scanpydoc", "nbsphinx", "nbsphinx-link", "ipython", "toml", "pydata-sphinx-theme", "sphinx-autodoc-typehints", "sphinx_gallery", "sphinx-rtd-theme"]
