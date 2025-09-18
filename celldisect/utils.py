@@ -1,8 +1,7 @@
 from typing import List
 from torch import nn
 import torch
-from scvi.nn import one_hot
-
+import torch.nn.functional as F
 from enum import Enum
 
 
@@ -47,11 +46,11 @@ def one_hot_cat(n_cat_list: List[int], cat_covs: torch.Tensor):
             raise ValueError("cat not provided while n_cat != 0 in init. params.")
         if n_cat > 1:  # n_cat = 1 will be ignored - no additional information
             if cat.size(1) != n_cat:
-                onehot_cat = one_hot(cat, n_cat)
+                onehot_cat = F.one_hot(cat.squeeze(-1).long(), num_classes=n_cat)
             else:
                 onehot_cat = cat  # cat has already been one_hot encoded
-            one_hot_cat_list += [onehot_cat]
-    u_cat = torch.cat(*one_hot_cat_list) if len(one_hot_cat_list) > 1 else one_hot_cat_list[0]
+            one_hot_cat_list.append(onehot_cat)
+    u_cat = torch.cat(one_hot_cat_list, dim=1) if len(one_hot_cat_list) > 1 else one_hot_cat_list[0]
     return u_cat
 
 class PerturbationNetwork(nn.Module): # from CPA code
