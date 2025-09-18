@@ -15,7 +15,7 @@ from .utils import *
 from scvi.train._metrics import ElboMetric
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
-from scvi.autotune._types import Tunable
+# from scvi.autotune._types import Tunable
 
 class CellDISECTTrainingPlan(TrainingPlan):
     """
@@ -87,24 +87,24 @@ class CellDISECTTrainingPlan(TrainingPlan):
     def __init__(
         self,
         module: BaseModuleClass,
-        recon_weight: Tunable[Union[float, int]],
-        cf_weight: Tunable[Union[float, int]],
-        beta: Tunable[Union[float, int]],
-        clf_weight: Tunable[Union[float, int]],
-        adv_clf_weight: Tunable[Union[float, int]],
-        adv_period: Tunable[int],
-        n_cf: Tunable[int],
-        optimizer: Tunable[Literal["Adam", "AdamW", "Custom"]] = "Adam",
+        recon_weight: Union[float, int],
+        cf_weight: Union[float, int],
+        beta: Union[float, int],
+        clf_weight: Union[float, int],
+        adv_clf_weight: Union[float, int],
+        adv_period: int,
+        n_cf: int,
+        optimizer: Literal["Adam", "AdamW", "Custom"] = "Adam",
         optimizer_creator: Optional[TorchOptimizerCreator] = None,
-        lr: Tunable[float] = 1e-3,
-        weight_decay: Tunable[float] = 1e-6,
-        n_steps_kl_warmup: Tunable[int] = None,
-        n_epochs_kl_warmup: Tunable[int] = 400,
-        n_epochs_pretrain_ae: Tunable[int] = 0,
-        reduce_lr_on_plateau: Tunable[bool] = True,
-        lr_factor: Tunable[float] = 0.6,
-        lr_patience: Tunable[int] = 30,
-        lr_threshold: Tunable[float] = 0.0,
+        lr: float = 1e-3,
+        weight_decay: float = 1e-6,
+        n_steps_kl_warmup: int = None,
+        n_epochs_kl_warmup: int = 400,
+        n_epochs_pretrain_ae: int = 0,
+        reduce_lr_on_plateau: bool = True,
+        lr_factor: float = 0.6,
+        lr_patience: int = 30,
+        lr_threshold: float = 0.0,
         lr_scheduler_metric: Literal["loss_validation"] = "loss_validation",
         lr_min: float = 0,
         scale_adversarial_loss: Union[float, Literal["auto"]] = "auto",

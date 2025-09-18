@@ -27,7 +27,7 @@ from scvi.dataloaders._data_splitting import DataSplitter
 from scvi.dataloaders._ann_dataloader import AnnDataLoader
 from scvi.train import TrainRunner
 from scvi.model.base import RNASeqMixin, VAEMixin, BaseModelClass
-from scvi.autotune._types import Tunable, TunableMixin
+# from scvi.autotune._types import Tunable, TunableMixin
 logger = logging.getLogger(__name__)
 
 from ._module import CellDISECTModule
@@ -44,7 +44,7 @@ class CellDISECT(
     VAEMixin,
     UnsupervisedTrainingMixin,
     BaseModelClass,
-    TunableMixin
+    # TunableMixin
 ):
     """CellDISECT model for single-cell RNA sequencing data analysis.
 
@@ -639,13 +639,13 @@ class CellDISECT(
             early_stopping: bool = True,
             save_best: bool = False,
             plan_kwargs: Optional[dict] = None,
-            recon_weight: Tunable[Union[float, int]] = 10, # RECONST_LOSS_X weight
-            cf_weight: Tunable[Union[float, int]] = 1,  # RECONST_LOSS_X_CF weight
-            beta: Tunable[Union[float, int]] = 1,  # KL Zi weight
-            clf_weight: Tunable[Union[float, int]] = 50,  # Si classifier weight
-            adv_clf_weight: Tunable[Union[float, int]] = 10,  # adversarial classifier weight
-            adv_period: Tunable[int] = 1,  # adversarial training period
-            n_cf: Tunable[int] = 10,  # number of X_cf recons (a random permutation of n VAEs and a random half-batch subset for each trial)
+            recon_weight: Union[float, int] = 10, # RECONST_LOSS_X weight
+            cf_weight: Union[float, int] = 1,  # RECONST_LOSS_X_CF weight
+            beta: Union[float, int] = 1,  # KL Zi weight
+            clf_weight: Union[float, int] = 50,  # Si classifier weight
+            adv_clf_weight: Union[float, int] = 10,  # adversarial classifier weight
+            adv_period: int = 1,  # adversarial training period
+            n_cf: int = 10,  # number of X_cf recons (a random permutation of n VAEs and a random half-batch subset for each trial)
             kappa_optimizer2: bool = True,
             n_epochs_pretrain_ae: int = 0,
             **trainer_kwargs,

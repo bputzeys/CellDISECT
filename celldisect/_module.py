@@ -8,7 +8,7 @@ from torch.distributions import kl_divergence as kl
 from torchmetrics import Accuracy, F1Score
 
 from scvi import REGISTRY_KEYS
-from scvi.autotune._types import Tunable
+# from scvi.autotune._types import Tunable
 from scvi.distributions import NegativeBinomial, Poisson, ZeroInflatedNegativeBinomial
 from scvi.module.base import BaseModuleClass, auto_move_data
 from scvi.nn import DecoderSCVI, Encoder
@@ -66,18 +66,18 @@ class CellDISECTModule(BaseModuleClass):
     def __init__(
             self,
             n_input: int,
-            n_hidden: Tunable[int] = 128,
-            n_latent_shared: Tunable[int] = 10,
-            n_latent_attribute: Tunable[int] = 10,
-            n_layers: Tunable[int] = 1,
+            n_hidden: int = 128,
+            n_latent_shared: int = 10,
+            n_latent_attribute: int = 10,
+            n_layers: int = 1,
             n_cats_per_cov: Optional[Iterable[int]] = None,
-            dropout_rate: Tunable[float] = 0.1,
+            dropout_rate: float = 0.1,
             log_variational: bool = True,
-            gene_likelihood: Tunable[Literal["zinb", "nb", "poisson"]] = "zinb",
-            latent_distribution: Tunable[Literal["normal", "ln"]] = "normal",
-            deeply_inject_covariates: Tunable[bool] = True,
-            use_batch_norm: Tunable[Literal["encoder", "decoder", "none", "both"]] = "both",
-            use_layer_norm: Tunable[Literal["encoder", "decoder", "none", "both"]] = "none",
+            gene_likelihood: Literal["zinb", "nb", "poisson"] = "zinb",
+            latent_distribution: Literal["normal", "ln"] = "normal",
+            deeply_inject_covariates: bool = True,
+            use_batch_norm: Literal["encoder", "decoder", "none", "both"] = "both",
+            use_layer_norm: Literal["encoder", "decoder", "none", "both"] = "none",
             var_activation: Optional[Callable] = None,
             use_custom_embs: bool = False,
             embeddings: Union[torch.Tensor, List[torch.Tensor]] = None,
@@ -913,11 +913,11 @@ class CellDISECTModule(BaseModuleClass):
             tensors,
             inference_outputs,
             generative_outputs,
-            recon_weight: Tunable[Union[float, int]], # RECONST_LOSS_X weight
-            cf_weight: Tunable[Union[float, int]],  # RECONST_LOSS_X_CF weight
-            beta: Tunable[Union[float, int]],  # KL Zi weight
-            clf_weight: Tunable[Union[float, int]],  # Si classifier weight
-            n_cf: Tunable[int],  # number of X_cf recons (X_cf = a random permutation of X)
+            recon_weight: Union[float, int], # RECONST_LOSS_X weight
+            cf_weight: Union[float, int],  # RECONST_LOSS_X_CF weight
+            beta: Union[float, int],  # KL Zi weight
+            clf_weight: Union[float, int],  # Si classifier weight
+            n_cf: int,  # number of X_cf recons (X_cf = a random permutation of X)
             kl_weight: float = 1.0,
             ensemble_method_cf=True,
     ):
