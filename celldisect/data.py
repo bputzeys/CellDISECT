@@ -3,7 +3,42 @@ from typing import Optional
 from scvi import settings
 from scvi.data import AnnDataManager
 from scvi.dataloaders import DataSplitter, AnnDataLoader
-from scvi.model._utils import parse_use_gpu_arg
+import torch 
+from typing import Union
+
+def parse_use_gpu_arg(
+    use_gpu: Optional[Union[str, int, bool]] = None, return_device=True
+):
+    """
+    Parses the use_gpu arg in codebase to be compaitible with PytorchLightning's gpus arg.
+    If return_device is True, will also return the device.
+
+    Parameters:
+    -----------
+
+    use_gpu
+        Use default GPU if available (if None or True), or index of GPU to use (if int),
+        or name of GPU (if str), or use CPU (if False).
+    return_device
+        If True, will return the torch.device of use_gpu.
+    """
+
+    gpu_available = torch.cuda.is_available()
+    if (use_gpu is None and not gpu_available) or (use_gpu is False):
+        gpus = 0
+        device = torch.device("cpu")
+    elif (use_gpu is None and gpu_available) or (use_gpu is True):
+        current = torch.cuda.current_device()
+        device = torch.device(current)
+        gpus = [current]
+    elif isinstance(use_gpu, int) or isinstance(use_gpu, str):
+        device = torch.device(use_gpu)
+        gpus = [use_gpu]
+
+    if return_device:
+        return gpus, device
+    else:
+        return gpus
 
 
 class AnnDataSplitter(DataSplitter):
